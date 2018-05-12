@@ -25,7 +25,7 @@ from setuptools import setup
 setup(
     name='nvmesh-shell',
     version='0.1',
-    py_modules=['nvmesh-shell', 'constants', 'nvmesh_api','nvmesh_shell],
+    py_modules=['nvmesh-shell', 'constants', 'nvmesh_api', 'nvmesh_shell'],
     install_requires=['Cmd2', 'paramiko', 'humanfriendly', 'gnureadline'],
     entry_points="""
         [console_scripts]
