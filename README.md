@@ -1,7 +1,6 @@
 **Install**
 
-You can install the nvmesh-shell via 'pip' by using: `pip install
-nvmesh-shell ` or you can download/clone this git repository by using
+You can install the nvmesh-shell by downloading/cloneing this git repository using
 `git clone https://github.com/Excelero/nvmesh-shell`, cd into the
 nvmesh-shell newly created directory and type `pip install .`
 
