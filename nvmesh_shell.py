@@ -36,6 +36,7 @@ import humanfriendly
 from constants import *
 import nvmesh_api
 import time
+import requests
 
 
 class OutputFormatter:
@@ -138,14 +139,16 @@ class ManagementServer:
     def __init__(self):
         self.server = None
         self.server_list = []
-        self.server_file = os.path.abspath('nvmesh_manager')
+        self.server_file = os.path.expanduser('~/.nvmesh_manager')
 
     def get_management_server(self):
         if os.path.isfile(self.server_file):
             self.server = open(self.server_file, 'r').read()
             return self.server
         else:
-            formatter.print_yellow("No API management server defined yet! Run 'define manager' first!")
+            formatter.print_yellow("No API management server defined yet!")
+            self.server = raw_input("Provide the NVMesh manager server name: ")
+            self.save_management_server([self.server])
             return None
 
     def save_management_server(self, manager):
@@ -787,16 +790,16 @@ def check_managers(details, managers):
             ssh_return = ssh.return_remote_command_std_output(manager, CMD_STATUS_NVMESH_MANAGER)
             if ssh_return[0] == 0:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print formatter.bold(manager), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print manager, formatter.green('OK')
             else:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print formatter.bold(manager), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print manager, formatter.red('Failed')
 
 
 def stop_managers(details, managers):
@@ -809,16 +812,16 @@ def stop_managers(details, managers):
             ssh_return = ssh.return_remote_command_std_output(manager, CMD_STOP_NVMESH_MANAGER)
             if ssh_return[0] == 0:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print formatter.bold(manager), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print manager, formatter.green('OK')
             else:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print formatter.bold(manager), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print manager, formatter.red('Failed')
 
 
 def start_managers(details, managers):
@@ -831,16 +834,16 @@ def start_managers(details, managers):
             ssh_return = ssh.return_remote_command_std_output(manager, CMD_START_NVMESH_MANAGER)
             if ssh_return[0] == 0:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print formatter.bold(manager), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print manager, formatter.green('OK')
             else:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print formatter.bold(manager), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print manager, formatter.red('Failed')
 
 
 def restart_managers(details, managers):
@@ -853,16 +856,16 @@ def restart_managers(details, managers):
             ssh_return = ssh.return_remote_command_std_output(manager, CMD_RESTART_NVMESH_MANAGER)
             if ssh_return[0] == 0:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print formatter.bold(manager), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.green('OK')
+                    print manager, formatter.green('OK')
             else:
                 if details is True:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print formatter.bold(manager), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print "\033[1m" + manager + "\033[0m", formatter.red('Failed')
+                    print manager, formatter.red('Failed')
 
 
 def check_cluster():
@@ -1085,12 +1088,17 @@ class NvmeshShell(Cmd):
 
 
 def start_shell():
-    history_file = os.path.expanduser('~/.nvmesh_shell_history')
+    print '''
+    Copyright (c) 2018 Excelero, Inc. All rights reserved.
 
+    This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
+    This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
+            '''
+    requests.packages.urllib3.disable_warnings()
+    history_file = os.path.expanduser('~/.nvmesh_shell_history')
     if not os.path.exists(history_file):
         with open(history_file, "w") as history:
             history.write("")
-
     readline.read_history_file(history_file)
     atexit.register(readline.write_history_file, history_file)
     mgmt.server = mgmt.get_management_server()
@@ -1100,12 +1108,7 @@ def start_shell():
     if len(sys.argv) > 1:
         shell.onecmd(' '.join(sys.argv[1:]))
     else:
-        print '''
-Copyright (c) 2018 Excelero, Inc. All rights reserved.
-
-This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
-This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
-        '''
+        mgmt.server = mgmt.get_management_server()
         shell.cmdloop('Starting NVMesh Shell ...')
 
 

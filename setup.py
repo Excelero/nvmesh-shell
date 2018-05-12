@@ -21,12 +21,36 @@
 # Email:         andreas@excelero.com
 
 from setuptools import setup
+from os import path
+
+here = path.abspath(path.dirname(__file__))
+
+with open(path.join(here, 'README.md')) as f:
+    long_description = f.read()
 
 setup(
     name='nvmesh-shell',
     version='0.1',
+    author='Excelero, Inc. - Andreas Krause',
+    url='https://github.com/Excelero/nvmesh-shell',
+    description='Excelero NVMesh interactive shell and cli tool.',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    author_email='andreas@excelero.com',
+    classifiers=[
+        #   3 - Alpha
+        #   4 - Beta
+        #   5 - Production/Stable
+        'Development Status :: 4 - Beta',
+        'License :: MIT License',
+        'Programming Language :: Python :: 2.7',
+    ],
+    project_urls={
+        'Bug Reports': 'https://github.com/Excelero/nvmesh-shell/issues',
+        'Source': 'https://github.com/Excelero/nvmesh-shell/',
+    },
     py_modules=['nvmesh-shell', 'constants', 'nvmesh_api', 'nvmesh_shell'],
-    install_requires=['Cmd2', 'paramiko', 'humanfriendly', 'gnureadline'],
+    install_requires=['Cmd2', 'paramiko', 'humanfriendly', 'gnureadline', 'requests'],
     entry_points="""
         [console_scripts]
         nvmesh-shell=nvmesh_shell:start_shell
