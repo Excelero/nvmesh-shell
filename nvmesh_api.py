@@ -38,6 +38,7 @@ class Api:
         self.api_session.verify = False
 
     def login(self):
+        requests.packages.urllib3.disable_warnings()
         self.api_endpoint = '/login'
         self.api_payload = {
             "username" : self.api_user_name,

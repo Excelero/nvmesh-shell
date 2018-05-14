@@ -102,7 +102,6 @@ class Hosts:
         self.formatter = OutputFormatter()
         self.host_delete_list = []
 
-
     def read_host_list(self):
         self.host_list = open(self.host_file, 'r').readlines()
         return self.host_list
@@ -315,6 +314,7 @@ hosts = Hosts()
 def get_api_ready():
     nvmesh.api_user_name = user.API_user_name
     nvmesh.api_password = user.API_password
+    requests.packages.urllib3.disable_warnings()
     nvmesh.api_server = mgmt.server
     nvmesh.login()
     return
@@ -361,25 +361,30 @@ def list_targets(details, csv_format, json_format, server):
                 target_disk_list.append(disk['diskID'])
             for nic in target['nics']:
                 target_nic_list.append(nic['nicID'])
-                if details is True:
-                    target_list.append([target['node_id'], target['health'], target['version'],
-                                        '; '.join(target_disk_list),
-                                    ' '.join(target_nic_list)])
-                else:
-                    target_list.append([target['node_id'], target['health'], target['version']])
+            if details is True:
+                target_list.append([target['node_id'], target['health'], target['version'],
+                                    '; '.join(target_disk_list),
+                                ' '.join(target_nic_list)])
+            else:
+                target_list.append([target['node_id'], target['health'], target['version']])
     if details is True:
         if csv_format is True:
             formatter.print_csv(target_list)
             return
-        if json_format is True:
+        elif json_format is True:
             formatter.print_json(target_list)
+            return
         else:
             print(format_smart_table(target_list,
                                      ['Target Name', 'Target Health', 'NVMesh Version', 'Target Disks',
                                       'Target NICs']))
+            return
     else:
         if csv_format is True:
             formatter.print_csv(target_list)
+            return
+        elif json_format is True:
+            formatter.print_json(target_list)
             return
         else:
             print(format_smart_table(target_list, ['Target Name', 'Target Health', 'NVMesh Version']))
@@ -506,9 +511,9 @@ def list_drive_classes(details, csv_format, json_format, classes):
     get_api_ready()
     drive_classes_json = json.loads(nvmesh.get_disk_classes())
     drive_class_list = []
-    drive_model_list = []
-    drive_target_list = []
     for drive_class in drive_classes_json:
+        drive_model_list = []
+        drive_target_list = []
         if classes is not None and drive_class['_id'] not in classes:
             continue
         else:
@@ -552,26 +557,49 @@ def list_target_classes(csv_format, json_format, classes):
         print(format_smart_table(target_classes_list, ['Target Class', 'Description', 'Target Nodes']))
 
 
-def check_targets(details, targets):
-    print formatter.bold_underline('Checking the NVMesh targets ...')
+def manage_targets(details, targets, action, graceful):
+    if graceful is True and action == "stop":
+        get_api_ready()
+        nvmesh.target_cluster_shutdown()
+        print 'Shutting down NVMesh target cluster. Please wait ...'
+        while count_active_targets() != 0:
+            time.sleep(5)
+        print 'Nvmesh target cluster shutdown', formatter.green('OK')
+        return
+    if graceful is True and action == "restart":
+        get_api_ready()
+        nvmesh.target_cluster_shutdown()
+        print 'Shutting down NVMesh target cluster. Please wait ...'
+        while count_active_targets() != 0:
+            time.sleep(5)
+        print 'Nvmesh target cluster shutdown', formatter.green('OK')
+        targets(details, targets, "start", graceful)
+        return
     for target in get_target_list():
         if targets is not None and target.split('.')[0] not in targets:
             continue
         else:
             ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(target, CMD_STATUS_NVMESH_TARGET)
+            if action == "check":
+                ssh_return = ssh.return_remote_command_std_output(target, CMD_STATUS_NVMESH_TARGET)
+            elif action == "start":
+                ssh_return = ssh.return_remote_command_std_output(target, CMD_START_NVMESH_TARGET)
+            elif action == "stop":
+                ssh_return = ssh.return_remote_command_std_output(target, CMD_STOP_NVMESH_TARGET)
+            elif action == "restart":
+                ssh_return = ssh.return_remote_command_std_output(target, CMD_RESTART_NVMESH_TARGET)
             if ssh_return[0] == 0:
                 if details is True:
-                    print formatter.bold(target), formatter.green('OK')
+                    print formatter.bold(target), action.capitalize(), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print target, formatter.green('OK')
+                    print target, action.capitalize(), formatter.green('OK')
             else:
                 if details is True:
-                    print formatter.bold(target), formatter.red('Failed')
+                    print formatter.bold(target), action.capitalize(), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print target, formatter.red('Failed')
+                    print target, action.capitalize(), formatter.red('Failed')
 
 
 def count_active_targets():
@@ -584,307 +612,114 @@ def count_active_targets():
     return active_targets
 
 
-def stop_targets(details, targets, force):
-    if force is True:
-        print formatter.bold_underline('Stopping the NVMesh targets forcefully ...')
-        for target in get_target_list():
-            if targets is not None and target.split('.')[0] not in targets:
-                continue
-            else:
-                ssh = SSHRemoteOperations()
-                ssh_return = ssh.return_remote_command_std_output(target, CMD_STOP_NVMESH_TARGET)
-                if ssh_return[0] == 0:
-                    if details is True:
-                        print formatter.bold(target), formatter.green('OK')
-                        print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                    else:
-                        print target, formatter.green('OK')
-                else:
-                    if details is True:
-                        print formatter.bold(target), formatter.red('Failed')
-                        print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                    else:
-                        print target, formatter.red('Failed')
-    else:
-        print formatter.bold_underline('Stopping the NVMesh targets ...')
-        get_api_ready()
-        nvmesh.target_cluster_shutdown()
-        print 'Please wait ...'
-        while count_active_targets() != 0:
-            time.sleep(5)
-        print 'Nvmesh target cluster shutdown', formatter.green('OK')
-
-
-def start_targets(details, targets):
-    print formatter.bold_underline('Starting the NVMesh targets ...')
-    for target in get_target_list():
-        if targets is not None and target.split('.')[0] not in targets:
+def manage_clients(details, clients, action):
+    for client in get_client_list():
+        if clients is not None and client.split('.')[0] not in clients:
             continue
         else:
             ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(target, CMD_START_NVMESH_TARGET)
+            if action == "check":
+                ssh_return = ssh.return_remote_command_std_output(client, CMD_STATUS_NVMESH_CLIENT)
+            elif action == "start":
+                ssh_return = ssh.return_remote_command_std_output(client, CMD_START_NVMESH_CLIENT)
+            elif action == "stop":
+                ssh_return = ssh.return_remote_command_std_output(client, CMD_STOP_NVMESH_CLIENT)
+            elif action == "restart":
+                ssh_return = ssh.return_remote_command_std_output(client, CMD_RESTART_NVMESH_CLIENT)
             if ssh_return[0] == 0:
                 if details is True:
-                    print formatter.bold(target), formatter.green('OK')
+                    print formatter.bold(client), action.capitalize(), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print target, formatter.green('OK')
+                    print client, action.capitalize(), formatter.green('OK')
             else:
                 if details is True:
-                    print formatter.bold(target), formatter.red('Failed')
+                    print formatter.bold(client), action.capitalize(), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print target, formatter.red('Failed')
+                    print client, action.capitalize(), formatter.red('Failed')
 
 
-def restart_targets(details, targets):
-    print formatter.bold_underline('Restarting the NVMesh targets ...')
-    for target in get_target_list():
-        if targets is not None and target.split('.')[0] not in targets:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(target, CMD_RESTART_NVMESH_TARGET)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(target), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print target, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(target), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print target, formatter.red('Failed')
-
-
-def check_clients(details, clients):
-    print formatter.bold_underline('Checking the NVMesh clients ...')
+def manage_mcm(clients, action):
     for client in get_client_list():
         if clients is not None and client.split('.')[0] not in clients:
             continue
         else:
             ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(client, CMD_STATUS_NVMESH_CLIENT)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(client), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(client), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.red('Failed')
+            if action == "stop":
+                ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
+                print client, "\tStopped the MangaementCM services."
+            elif action == "start":
+                ssh.execute_remote_command(client, CMD_START_NVMESH_MCM)
+                print client, "\tStarted the MangaementCM services."
+            elif action == "restart":
+                ssh.execute_remote_command(client, CMD_RESTART_NVMESH_MCM)
+                print client, "\tRestarted the MangaementCM services."
 
 
-def stop_clients(details, clients):
-    print formatter.bold_underline('Stopping the NVMesh clients ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(client, CMD_STOP_NVMESH_CLIENT)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(client), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(client), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.red('Failed')
-
-
-def stop_mcm(clients):
-    print formatter.bold_underline('Stopping the NVMesh ManagementCM services ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
-            print client, "\tStopped the MangaementCM services."
-
-
-def start_mcm(clients):
-    print formatter.bold_underline('Starting the NVMesh ManagementCM services ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh.execute_remote_command(client, CMD_START_NVMESH_MCM)
-            print client, "\tStarted the MangaementCM service"
-
-
-def restart_mcm(clients):
-    print formatter.bold_underline('Restarting the NVMesh ManagementCM services ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh.execute_remote_command(client, CMD_RESTART_NVMESH_MCM)
-            print client, "\tRestarted the MangaementCM"
-
-
-def start_clients(details, clients):
-    print formatter.bold_underline('Starting the NVMesh clients ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(client, CMD_START_NVMESH_CLIENT)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(client), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(client), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.red('Failed')
-
-
-def restart_clients(details, clients):
-    print formatter.bold_underline('Restarting the NVMesh clients ...')
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(client, CMD_RESTART_NVMESH_CLIENT)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(client), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(client), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print client, formatter.red('Failed')
-
-
-def check_managers(details, managers):
-    print formatter.bold_underline('Checking the NVMesh managers ...')
+def manage_managers(details, managers, action):
     for manager in mgmt.get_management_server_list():
         if managers is not None and manager not in managers:
             continue
         else:
             ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(manager, CMD_STATUS_NVMESH_MANAGER)
+            if action == "check":
+                ssh_return = ssh.return_remote_command_std_output(manager, CMD_STATUS_NVMESH_MANAGER)
+            elif action == "start":
+                ssh_return = ssh.return_remote_command_std_output(manager, CMD_START_NVMESH_MANAGER)
+            elif action == "stop":
+                ssh_return = ssh.return_remote_command_std_output(manager, CMD_STOP_NVMESH_MANAGER)
+            elif action == "restart":
+                ssh_return = ssh.return_remote_command_std_output(manager, CMD_RESTART_NVMESH_MANAGER)
             if ssh_return[0] == 0:
                 if details is True:
-                    print formatter.bold(manager), formatter.green('OK')
+                    print formatter.bold(manager), action.capitalize(), formatter.green('OK')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print manager, formatter.green('OK')
+                    print manager, action.capitalize(), formatter.green('OK')
             else:
                 if details is True:
-                    print formatter.bold(manager), formatter.red('Failed')
+                    print formatter.bold(manager), action.capitalize(), formatter.red('Failed')
                     print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
                 else:
-                    print manager, formatter.red('Failed')
+                    print manager, action.capitalize(), formatter.red('Failed')
 
 
-def stop_managers(details, managers):
-    print formatter.bold_underline('Stopping the NVMesh managers ...')
-    for manager in mgmt.get_management_server_list():
-        if managers is not None and manager not in managers:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(manager, CMD_STOP_NVMESH_MANAGER)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(manager), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(manager), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.red('Failed')
-
-
-def start_managers(details, managers):
-    print formatter.bold_underline('Starting the NVMesh managers ...')
-    for manager in mgmt.get_management_server_list():
-        if managers is not None and manager not in managers:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(manager, CMD_START_NVMESH_MANAGER)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(manager), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(manager), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.red('Failed')
-
-
-def restart_managers(details, managers):
-    print formatter.bold_underline('Restarting the NVMesh managers ...')
-    for manager in mgmt.get_management_server_list():
-        if managers is not None and manager not in managers:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            ssh_return = ssh.return_remote_command_std_output(manager, CMD_RESTART_NVMESH_MANAGER)
-            if ssh_return[0] == 0:
-                if details is True:
-                    print formatter.bold(manager), formatter.green('OK')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.green('OK')
-            else:
-                if details is True:
-                    print formatter.bold(manager), formatter.red('Failed')
-                    print ssh_return[1][:ssh_return[1].rfind('\n')], "\n"
-                else:
-                    print manager, formatter.red('Failed')
-
-
-def check_cluster():
-    check_managers(None, None)
-    check_targets(None, None)
-    check_clients(None, None)
-
-
-def start_cluster(details):
-    start_managers(details, None)
-    time.sleep(3)
-    start_targets(details, None)
-    start_clients(details, None)
-
-
-def stop_cluster(details, force):
-    stop_clients(details, None)
-    stop_targets(details, None, force)
-    stop_managers(details, None)
+def manage_cluster(details, action, graceful):
+    if action == "check":
+        print ("Checking the NVMesh managers ...")
+        manage_managers(None, None, action)
+        print ("Checking the NVMesh targets ...")
+        manage_targets(None, None, action, False)
+        print ("Checking the NVMesh clients ...")
+        manage_clients(None, None, action)
+    elif action == "start":
+        print ("Starting the NVMesh managers ...")
+        manage_managers(details, None, action)
+        time.sleep(3)
+        print ("Starting the NVMesh targets ...")
+        manage_targets(details, None, action, False)
+        print ("Starting the NVMesh clients ...")
+        manage_clients(details, None, action)
+    elif action == "stop":
+        print ("Stopping the NVMesh clients ...")
+        manage_clients(details, None, action)
+        print ("Stopping the NVMesh targets ...")
+        manage_targets(details, None, action, graceful)
+        print ("Stopping the NVMesh managers ...")
+        manage_managers(details, None, action)
+    elif action == "restart":
+        print ("Stopping the NVMesh clients ...")
+        manage_clients(details, None, action)
+        print ("Stopping the NVMesh targets ...")
+        manage_targets(details, None, action, graceful)
+        print ("Restarting the NVMesh managers ...")
+        manage_managers(details, None, action)
+        time.sleep(3)
+        print ("Starting the NVMesh targets ...")
+        manage_targets(details, None, action, False)
+        print ("Starting the NVMesh clients ...")
+        manage_clients(details, None, action)
 
 
 class NvmeshShell(Cmd):
@@ -962,14 +797,15 @@ class NvmeshShell(Cmd):
 
     @with_argparser(check_parser)
     def do_check(self, args):
+        action = "check"
         if args.nvmesh_object == 'targets':
-            check_targets(args.details, args.server)
+            manage_targets(args.details, args.server, action, False)
         elif args.nvmesh_object == 'clients':
-            check_clients(args.details, args.server)
+            manage_clients(args.details, args.server, action)
         elif args.nvmesh_object == 'managers':
-            check_managers(args.details, args.server)
+            manage_managers(args.details, args.server, action)
         elif args.nvmesh_object == 'cluster':
-            check_cluster()
+            manage_cluster(args.details, action, False)
 
     stop_parser = argparse.ArgumentParser()
     stop_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
@@ -977,23 +813,25 @@ class NvmeshShell(Cmd):
                               help='Stop the NVMesh services.')
     stop_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                               help='List and view the service details.')
-    stop_parser.add_argument('-f', '--force', required=False, action='store_const', const=True,
-                             help='Force the stopping of the service.')
+    stop_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
+                                help='Graceful stop of all NVMesh targets in the cluster.'
+                                     ' The default is True')
     stop_parser.add_argument('-s', '--server', nargs='+', required=False,
                               help='Specify a single or a list of servers.')
 
     @with_argparser(stop_parser)
     def do_stop(self, args):
+        action = "stop"
         if args.nvmesh_object == 'targets':
-            stop_targets(args.details, args.server, args.force)
+            manage_targets(args.details, args.server, action, args.graceful)
         elif args.nvmesh_object == 'clients':
-            stop_clients(args.details, args.server)
+            manage_clients(args.details, args.server, action)
         elif args.nvmesh_object == 'managers':
-            stop_managers(args.details, args.server)
+            manage_managers(args.details, args.server, action)
         elif args.nvmesh_object == 'cluster':
-            stop_cluster(args.details, args.force)
+            manage_cluster(args.details, action, args.graceful)
         elif args.nvmesh_object == 'mcm':
-            stop_mcm(args.server)
+            manage_mcm(args.server, action)
 
     start_parser = argparse.ArgumentParser()
     start_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
@@ -1006,16 +844,17 @@ class NvmeshShell(Cmd):
 
     @with_argparser(start_parser)
     def do_start(self, args):
+        action = "start"
         if args.nvmesh_object == 'targets':
-            start_targets(args.details, args.server)
+            manage_targets(args.details, args.server, action, False)
         elif args.nvmesh_object == 'clients':
-            start_clients(args.details, args.server)
+            manage_clients(args.details, args.server, action)
         elif args.nvmesh_object == 'managers':
-            start_managers(args.details, args.server)
+            manage_managers(args.details, args.server, action)
         elif args.nvmesh_object == 'cluster':
-            start_cluster(args.details)
+            manage_cluster(args.details, action, False)
         elif args.nvmesh_object == 'mcm':
-            start_mcm(args.server)
+            manage_mcm(args.server, action)
 
     restart_parser = argparse.ArgumentParser()
     restart_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
@@ -1023,19 +862,24 @@ class NvmeshShell(Cmd):
                               help='Restart the NVMesh services.')
     restart_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                               help='List and view the service details.')
+    restart_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
+                                help='Restart with a graceful stop of the targets in the cluster.')
     restart_parser.add_argument('-s', '--server', nargs='+', required=False,
                               help='Specify a single or a list of servers.')
 
-    @with_argparser(start_parser)
+    @with_argparser(restart_parser)
     def do_restart(self, args):
+        action = 'restart'
         if args.nvmesh_object == 'targets':
-            restart_targets(args.details, args.server)
+            manage_targets(args.details, args.server, action, False)
         elif args.nvmesh_object == 'clients':
-            restart_clients(args.details, args.server)
+            manage_clients(args.details, args.server, action)
         elif args.nvmesh_object == 'managers':
-            restart_managers(args.details, args.server)
+            manage_managers(args.details, args.server, action)
         elif args.nvmesh_object == 'mcm':
-            restart_mcm(args.server)
+            manage_mcm(args.server, action)
+        elif args.nvmesh_object == 'cluster':
+            manage_cluster(args.details, action, args.graceful)
 
     define_parser = argparse.ArgumentParser()
     define_parser.add_argument('nvmesh_object', choices=['manager','sshuser', 'sshpassword', 'apiuser', 'apipassword'],
@@ -1082,18 +926,17 @@ class NvmeshShell(Cmd):
             if args.persistent is True:
                 mgmt.save_management_server(args.server)
 
+    @staticmethod
     def do_license(self, args):
         """Shows the licensing details, term and conditions. """
         print open('LICENSE.txt', 'r').read()
 
 
 def start_shell():
-    print '''
-    Copyright (c) 2018 Excelero, Inc. All rights reserved.
+    print '''Copyright (c) 2018 Excelero, Inc. All rights reserved.
 
-    This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
-    This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
-            '''
+This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
+This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.'''
     requests.packages.urllib3.disable_warnings()
     history_file = os.path.expanduser('~/.nvmesh_shell_history')
     if not os.path.exists(history_file):
