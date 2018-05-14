@@ -36,7 +36,7 @@ import humanfriendly
 from constants import *
 import nvmesh_api
 import time
-import requests
+import urllib3
 
 
 class OutputFormatter:
@@ -314,7 +314,7 @@ hosts = Hosts()
 def get_api_ready():
     nvmesh.api_user_name = user.API_user_name
     nvmesh.api_password = user.API_password
-    requests.packages.urllib3.disable_warnings()
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     nvmesh.api_server = mgmt.server
     nvmesh.login()
     return
@@ -933,11 +933,6 @@ class NvmeshShell(Cmd):
 
 
 def start_shell():
-    print '''Copyright (c) 2018 Excelero, Inc. All rights reserved.
-
-This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
-This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.'''
-    requests.packages.urllib3.disable_warnings()
     history_file = os.path.expanduser('~/.nvmesh_shell_history')
     if not os.path.exists(history_file):
         with open(history_file, "w") as history:
@@ -952,7 +947,13 @@ This is free software, and you are welcome to redistribute it under certain cond
         shell.onecmd(' '.join(sys.argv[1:]))
     else:
         mgmt.server = mgmt.get_management_server()
-        shell.cmdloop('Starting NVMesh Shell ...')
+        shell.cmdloop('''
+Copyright (c) 2018 Excelero, Inc. All rights reserved.
+
+This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
+This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
+
+Starting the NVMesh shell ...''')
 
 
 if __name__ == '__main__':

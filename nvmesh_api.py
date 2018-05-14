@@ -21,6 +21,7 @@
 # Email:         andreas@excelero.com
 
 import requests
+import urllib3
 
 
 class Api:
@@ -34,11 +35,10 @@ class Api:
         self.api_payload = None
         self.api_session = requests.session()
         self.api_response = None
-        requests.packages.urllib3.disable_warnings()
         self.api_session.verify = False
 
     def login(self):
-        requests.packages.urllib3.disable_warnings()
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.api_endpoint = '/login'
         self.api_payload = {
             "username" : self.api_user_name,
