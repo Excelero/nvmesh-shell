@@ -8,7 +8,7 @@ In either case, you need the pip python package available and ready on your comp
 
 **Usage**
 
-On you terminal, type `nvmesh-shell` to start the interactive shell
+On your terminal, type `nvmesh-shell` to start the interactive shell
 session. For more help and a list of available sub-commands type `help`
 or `help <sub-command>`.
 
