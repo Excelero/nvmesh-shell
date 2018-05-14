@@ -710,16 +710,16 @@ def manage_cluster(details, action, graceful):
         manage_managers(details, None, action)
     elif action == "restart":
         print ("Stopping the NVMesh clients ...")
-        manage_clients(details, None, action)
+        manage_clients(details, None, "stop")
         print ("Stopping the NVMesh targets ...")
-        manage_targets(details, None, action, graceful)
+        manage_targets(details, None, "stop", graceful)
         print ("Restarting the NVMesh managers ...")
         manage_managers(details, None, action)
         time.sleep(3)
         print ("Starting the NVMesh targets ...")
-        manage_targets(details, None, action, False)
+        manage_targets(details, None, "start", False)
         print ("Starting the NVMesh clients ...")
-        manage_clients(details, None, action)
+        manage_clients(details, None, "start")
 
 
 class NvmeshShell(Cmd):
