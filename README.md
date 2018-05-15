@@ -22,4 +22,4 @@ tool if required.
 
 Example: `nvmesh-shell list volumes -d`
 
-More details on how to use it can be found here 
+More details on how to use it can be found here: [Wiki](https://github.com/Excelero/nvmesh-shell/wiki/home)
