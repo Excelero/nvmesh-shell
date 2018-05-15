@@ -21,3 +21,5 @@ Alternatively, you can use it and interact with it like a regular CLI
 tool if required.
 
 Example: `nvmesh-shell list volumes -d`
+
+More details on how to use it can be found here 
