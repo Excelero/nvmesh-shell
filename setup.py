@@ -47,6 +47,8 @@ setup(
     project_urls={
         'Bug Reports': 'https://github.com/Excelero/nvmesh-shell/issues',
         'Source': 'https://github.com/Excelero/nvmesh-shell/',
+        'Documentation': 'https://github.com/Excelero/nvmesh-shell/wiki',
+        'GPLv3 License': 'https://www.gnu.org/licenses/gpl-3.0.en.html',
     },
     py_modules=['nvmesh-shell', 'constants', 'nvmesh_api', 'nvmesh_shell', ],
     install_requires=['Cmd2', 'paramiko', 'humanfriendly', 'gnureadline', 'requests', 'urllib3'],
