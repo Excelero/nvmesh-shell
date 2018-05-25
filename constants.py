@@ -20,6 +20,14 @@
 # Maintainer:    Andreas Krause
 # Email:         andreas@excelero.com
 
+
+RAID_LEVELS = {
+    'lvm': 'LVM/JBOD',
+    'r0': 'Striped RAID-0',
+    'r1': 'Mirrored RAID-1',
+    'r10': 'Striped & Mirrored RAID-10'
+}
+
 REGEX_HCAID = r"(mlx5_\d*)"
 REGEX_INSTALLED_MEMORY = r"\S*Mem:\s*(\d*[A-Za-z])"
 REGEX_HCA_MAX = r"LnkCap:\s\S*\s\S*\s\S*\s([A-Za-z0-9]*/s),\s\S*\s(\S[0-9]*)"
@@ -30,8 +38,8 @@ EXCELERO_MANAGEMENT_PORTS = [("tcp", 4000), ("tcp", 4001)]
 ROCEV2_TARGET_PORT = ("udp", 4791)
 MONGODB_PORT = ("tcp", 27017)
 RHEL_INBOX_DRIVERS = ["libibverbs", "librdmacm", "libibcm", "libibmad", "libibumad", "libmlx4", "libmlx5", "opensm",
-                          "ibutils", "infiniband-diags", "perftest", "mstflint", "rdmacmutils", "ibverbs-utils",
-                          "librdmacm-utils", "libibverbs-utils"]
+                      "ibutils", "infiniband-diags", "perftest", "mstflint", "rdmacmutils", "ibverbs-utils",
+                      "librdmacm-utils", "libibverbs-utils"]
 SLES_INBOX_DRIVERS = ["rdma-core", "librdmacm1", "libibmad5", "libibumad3"]
 CMD_GET_HOSTNAME = "hostname -f"
 CMD_GET_OS_RELEASE = "cat /etc/os-release"
@@ -42,8 +50,8 @@ CMD_GET_ONE_QP = "mlxconfig -d %s -b ./Excelero_mlxconfig.db query ONE_QP_PER_RE
 CMD_DISABLE_FIREWALL = ["systemctl stop firewalld", "systemctl disable firewalld"]
 CMD_SET_FIREWALL_FOR_NVMESH_MGMT = ["firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport "
                                     "4000 -j ACCEPT -m comment --comment Excelero-Management", "firewall-cmd "
-                                    "--permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport 4001 -j "
-                                    "ACCEPT -m comment --comment Excelero-Management"]
+                                                                                               "--permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport 4001 -j "
+                                                                                               "ACCEPT -m comment --comment Excelero-Management"]
 CMD_SET_FIREWALL_FOR_ROCEV2 = "firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p udp --dport " \
                               "4791 -j ACCEPT -m comment --comment RoCEv2-Target"
 CMD_SET_FIREWALL_FOR_MOGODB = "firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport 27017 " \
@@ -56,7 +64,6 @@ CMD_GET_FIREWALLD_STATUS = "systemctl status firewalld | grep Active"
 CMD_GET_FIREWALL_CONFIG = "iptables -nL"
 CMD_STOP_SUSE_FIREWALL = "systemctl stop SuSEfirewall2"
 CMD_DISABLE_SUSE_FIREWALL = "systemctl disable SuSEfirewall2"
-
 
 # region Hardware Vendor and System Information Related
 CMD_CHECK_FOR_DMIDECODE = "which dmidecode"
