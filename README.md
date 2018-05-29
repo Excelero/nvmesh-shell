@@ -15,11 +15,11 @@ On your terminal, type `nvmesh-shell` to start the interactive shell
 session. For more help and a list of available sub-commands type `help`
 or `help <sub-command>`.
 
-Example: `nvmesh # help list`
+Example: `nvmesh # help show`
 
 Alternatively, you can use it and interact with it like a regular CLI
 tool if required.
 
-Example: `nvmesh-shell list volumes -d`
+Example: `nvmesh-shell show volumes -d`
 
 More details on how to use it can be found here: [Wiki](https://github.com/Excelero/nvmesh-shell/wiki/home)
