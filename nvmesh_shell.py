@@ -21,7 +21,6 @@
 # Email:         andreas@excelero.com
 
 from cmd2 import Cmd, with_argparser
-import csv
 import argparse
 import json
 import gnureadline as readline
@@ -37,6 +36,7 @@ from constants import *
 import nvmesh_api
 import time
 import urllib3
+from multiprocessing import Pool
 
 
 class OutputFormatter:
@@ -95,7 +95,7 @@ class OutputFormatter:
 
     @staticmethod
     def add_line_prefix(prefix, text):
-        text_lines = [' '.join([prefix, line]) for line in text.splitlines()]
+        text_lines = [' '.join([prefix.split('.')[0], line]) for line in text.splitlines()]
         return '\n'.join(text_lines)
 
 
@@ -327,7 +327,7 @@ def show_cluster(csv_format, json_format):
     cluster_volumes = []
     cluster_list = []
     for volume, count in cluster_json['volumes'].items():
-        cluster_volumes.append(' '.join([`count`, volume]))
+        cluster_volumes.append(' '.join([repr(count), volume]))
     cluster_list.append([total_server, offline_server, total_clients, offline_clients,
                          '; '.join(cluster_volumes),
                          humanfriendly.format_size(capacity_json['totalCapacityInBytes'], binary=True),
@@ -372,9 +372,8 @@ def show_targets(details, csv_format, json_format, server, short):
             formatter.print_json(target_list)
             return
         else:
-            return format_smart_table(target_list,
-                                     ['Target Name', 'Target Health', 'NVMesh Version', 'Target Disks',
-                                      'Target NICs'])
+            return format_smart_table(target_list, ['Target Name', 'Target Health', 'NVMesh Version', 'Target Disks',
+                                                    'Target NICs'])
     else:
         if csv_format is True:
             return formatter.print_tsv(target_list)
@@ -467,18 +466,17 @@ def show_volumes(details, csv_format, json_format, volumes, short):
         elif json_format is True:
             return formatter.print_json(volumes_list)
         else:
-            return format_smart_table(volumes_list,
-                                     ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type', 'Volume Size',
-                                      'Stripe Width', 'Dirty Bits', 'Target Names', 'Target Disks'])
+            return format_smart_table(volumes_list, ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
+                                                     'Volume Size', 'Stripe Width', 'Dirty Bits', 'Target Names',
+                                                     'Target Disks'])
     else:
         if csv_format is True:
             return formatter.print_tsv(volumes_list)
         elif json_format is True:
             return formatter.print_json(volumes_list)
         else:
-            return format_smart_table(volumes_list,
-                                     ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type', 'Volume Size',
-                                      'Stripe Width', 'Dirty Bits'])
+            return format_smart_table(volumes_list, ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
+                                                     'Volume Size', 'Stripe Width', 'Dirty Bits'])
 
 
 def show_vpgs(csv_format, json_format, vpgs):
@@ -749,28 +747,54 @@ def manage_cluster(details, action, graceful, prefix):
         NvmeshShell().poutput(manage_clients(details, None, "start", prefix))
 
 
-def run_command(command, scope, prefix):
+def run_command(command, scope, prefix, parallel, server_list):
     command_output = []
     host_list = []
     ssh = SSHRemoteOperations()
-    commandline = " ".join(command)
-    if scope == 'cluster':
-        host_list = get_target_list()
-        host_list.extend(get_client_list())
-        host_list.extend(mgmt.get_management_server_list())
-    if scope == 'targets':
-        host_list = get_target_list()
-    if scope == 'clients':
-        host_list = get_client_list()
-    if scope == 'manager':
-        host_list == mgmt.get_management_server_list()
-    for host in set(host_list):
+    command_line = " ".join(command)
+    if server_list is not None:
+        host_list = server_list
+    else:
+        if scope == 'cluster':
+            host_list = get_target_list()
+            host_list.extend(get_client_list())
+            host_list.extend(mgmt.get_management_server_list())
+        if scope == 'targets':
+            host_list = get_target_list()
+        if scope == 'clients':
+            host_list = get_client_list()
+        if scope == 'managers':
+            host_list = mgmt.get_management_server_list()
+    if parallel is True:
+        process_pool = Pool(len(set(host_list)))
+        parallel_execution_map = []
+        for host in set(host_list):
+            parallel_execution_map.append([host, command_line])
+        command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
+        process_pool.close()
+        output = []
         if prefix is True:
-            command_output.append(formatter.add_line_prefix(host, ssh.return_remote_command_std_output(host,
-                                                                                                       commandline)[1]))
+            for command_return in command_return_list:
+                output.append(formatter.add_line_prefix(command_return[0], command_return[1]))
+            return "\n".join(output)
         else:
-            command_output.append(ssh.return_remote_command_std_output(host, commandline)[1])
-    return "\n".join(command_output)
+            for command_return in command_return_list:
+                output.append(command_return[1])
+            return "\n".join(output)
+    else:
+        for host in set(host_list):
+            if prefix is True:
+                command_output.append(formatter.add_line_prefix(host, ssh.return_remote_command_std_output(
+                    host, command_line)[1]))
+            else:
+                command_output.append(ssh.return_remote_command_std_output(host, command_line)[1])
+        return "\n".join(command_output)
+
+
+def run_parallel_ssh_command(argument):
+    ssh = SSHRemoteOperations()
+    output = ssh.return_remote_command_std_output(argument[0], argument[1])[1]
+    return argument[0], output
 
 
 class NvmeshShell(Cmd):
@@ -1070,21 +1094,26 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
         """Shows the licensing details, term and conditions. """
         self.ppaged(open('LICENSE.txt', 'r').read())
 
-    runmcd_parser = argparse.ArgumentParser()
-    runmcd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster'],
+    runcmd_parser = argparse.ArgumentParser()
+    runcmd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster'],
                                nargs='?', default='cluster',
                                help='Specify the scope where you want to run the command.')
-    runmcd_parser.add_argument('-c', '--command', nargs='+', required=True,
+    runcmd_parser.add_argument('-c', '--command', nargs='+', required=True,
                                help='The command you want to run on the servers.')
-    runmcd_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+    runcmd_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
                                help='Adds the host name at the beginning of each line. This helps to identify the '
                                     'content when piping into a grep or similar tasks.')
+    runcmd_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
+                               help='Runs the remote command on the remote hosts in parallel.')
+    runcmd_parser.add_argument('-s', '--servers', nargs='+', required=False,
+                               help='Specify list of servers and or hosts.')
 
-    @with_argparser(runmcd_parser)
+    @with_argparser(runcmd_parser)
     def do_runcmd(self, args):
-        """ Run a remote shell command across the whole NVMesh cluster, or just the targets, clients or managers.
-Excample: runcmd targets -p -c uname"""
-        self.poutput(run_command(args.command, args.scope, args.host_prefix))
+        """Run a remote shell command across the whole NVMesh cluster, or just the targets, clients, managers or a list
+        of selected servers and hosts.
+Excample: runcmd managers -c systemctl status mongod"""
+        self.poutput(run_command(args.command, args.scope, args.host_prefix, args.parallel, args.servers))
 
 
 def start_shell():
