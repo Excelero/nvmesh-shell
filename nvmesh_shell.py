@@ -95,7 +95,7 @@ class OutputFormatter:
     @staticmethod
     def add_line_prefix(prefix, text):
         text_lines = [' '.join([prefix.split('.')[0], line]) for line in text.splitlines()]
-        return '\n'.join(text_lines) + "\n"
+        return '\n'.join(text_lines)
 
 
 class Hosts:
@@ -109,15 +109,16 @@ class Hosts:
     def manage_hosts(self, action, hosts_list):
         if action == "add":
             open(self.host_file, 'a').write(('\n'.join(hosts_list) + '\n'))
-        elif action == "list":
+        elif action == "get":
             if os.path.isfile(self.host_file):
+                output = []
                 self.host_list = open(self.host_file, 'r').readlines()
-                print ("Found the following hosts/servers configured:")
                 for host in self.host_list:
-                    print(host.strip())
+                    output.append(host.strip())
+                return output
             else:
-                print(self.formatter.yellow("No hosts/servers defined! Use 'add hosts' to add servers to your"
-                                            " shell environment."))
+                print(self.formatter.yellow(
+                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment."))
         elif action == "delete":
             tmp_host_list = []
             if os.path.isfile(self.host_file):
@@ -127,7 +128,8 @@ class Hosts:
                     tmp_host_list.remove(host.strip())
                 open(self.host_file, 'w').write(('\n'.join(tmp_host_list) + '\n'))
             else:
-                print(self.formatter.print_yellow("No hosts/servers defined!"))
+                print(self.formatter.print_yellow(
+                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment."))
 
 
 class ManagementServer:
@@ -732,6 +734,8 @@ def run_command(command, scope, prefix, parallel, server_list):
             host_list = get_client_list()
         if scope == 'managers':
             host_list = mgmt.get_management_server_list()
+        if scope == 'hosts':
+            host_list = Hosts().manage_hosts('get', None)
     if parallel is True:
         process_pool = Pool(len(set(host_list)))
         parallel_execution_map = []
@@ -742,11 +746,11 @@ def run_command(command, scope, prefix, parallel, server_list):
         output = []
         if prefix is True:
             for command_return in command_return_list:
-                output.append(formatter.add_line_prefix(command_return[0], command_return[1]))
+                output.append(formatter.add_line_prefix(command_return[0], command_return[1][1]))
             return "\n".join(output)
         else:
             for command_return in command_return_list:
-                output.append(command_return[1])
+                output.append(command_return[1][1])
             return "\n".join(output)
     else:
         for host in set(host_list):
@@ -826,10 +830,10 @@ E.g. 'list targets -s target1 target2'"""
         elif args.nvmesh_object == 'targetclasses':
             self.poutput(show_target_classes(args.tsv, args.json, args.classes))
         elif args.nvmesh_object == 'hosts':
-            self.poutput(hosts.manage_hosts("list", None))
+            self.poutput("\n".join(hosts.manage_hosts("get", None)))
 
     add_parser = argparse.ArgumentParser()
-    add_parser.add_argument('nvmesh_object', choices=['host', 'volume'], nargs=1,
+    add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'], nargs="?",
                             help='Add hosts to this shell environment')
     add_parser.add_argument('-r', '--raid_level', nargs=1, required=False,
                             help='The RAID level of the volume. Options: LVM_JBOD, RAID0, RAID1, RAID10')
@@ -853,7 +857,7 @@ E.g. 'list targets -s target1 target2'"""
                             help='Optional - Limit volume allocation to specific drive classes.')
     add_parser.add_argument('-w', '--stripe-width', nargs=1, required=False,
                             help='Number of disks to use. Required for R0 and R1.')
-    add_parser.add_argument('-s', '--server', nargs='+', required=False,
+    add_parser.add_argument('-s', '--servers', nargs='+', required=False,
                             help='Specify a single server or a list of servers.')
     add_parser.add_argument('-S', '--size', nargs='+', required=False,
                             help='Specify a the size of the new volume. The volumes size value is base*2/binary. '
@@ -867,8 +871,8 @@ E.g. 'add hosts' will add host/server entries to your nvmesh-shell environment w
 a new volume to the NVMesh cluster.
 """
         action = "add"
-        if args.nvmesh_object == 'host':
-            hosts.manage_hosts(action, args.server)
+        if args.nvmesh_object == 'hosts':
+            hosts.manage_hosts(action, args.servers)
 
     delete_parser = argparse.ArgumentParser()
     delete_parser.add_argument('nvmesh_object', choices=['hosts'],
@@ -1082,7 +1086,7 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
         self.ppaged(open('LICENSE.txt', 'r').read())
 
     runcmd_parser = argparse.ArgumentParser()
-    runcmd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster'],
+    runcmd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster', 'hosts'],
                                nargs='?', default='cluster',
                                help='Specify the scope where you want to run the command.')
     runcmd_parser.add_argument('-c', '--command', nargs='+', required=True,
