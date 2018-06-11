@@ -117,8 +117,8 @@ class Hosts:
                     output.append(host.strip())
                 return output
             else:
-                print(self.formatter.yellow(
-                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment."))
+                return [self.formatter.yellow(
+                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment.")]
         elif action == "delete":
             tmp_host_list = []
             if os.path.isfile(self.host_file):
@@ -128,8 +128,8 @@ class Hosts:
                     tmp_host_list.remove(host.strip())
                 open(self.host_file, 'w').write(('\n'.join(tmp_host_list) + '\n'))
             else:
-                print(self.formatter.print_yellow(
-                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment."))
+                return [self.formatter.yellow(
+                    "No hosts defined! Use 'add hosts' to add hosts to your shell environment.")]
 
 
 class ManagementServer:
@@ -154,7 +154,8 @@ class ManagementServer:
 
     def get_management_server_list(self):
         if os.path.isfile(self.server_file):
-            self.server_list = open(self.server_file, 'r').readlines()
+            for manager in open(self.server_file, 'r').readlines():
+                self.server_list.append(manager.split('.')[0])
             return self.server_list
         else:
             formatter.print_yellow("No API management server defined yet! Run 'define manager' first!")
@@ -237,18 +238,20 @@ class SSHRemoteOperations:
         self.remote_command_return = None
         self.remote_command_error = None
 
-    def test_ssh_connection(self, host, username, password):
+    def test_ssh_connection(self, host):
         try:
-            self.ssh.connect(host, username=username, password=password, timeout=5, port=self.ssh_port)
-            print formatter.print_green("Connection to host %s OK" % host)
+            self.ssh.connect(
+                host, username=user.SSH_user_name, password=user.SSH_password, timeout=5, port=self.ssh_port)
+            return formatter.green("Connection to host %s OK" % host)
         except Exception, e:
-            print formatter.print_red("Connection to host %s Failed! " % host + e.message)
+            print formatter.red("Connection to host %s Failed! " % host + e.message)
         self.ssh.close()
         return
 
-    def transfer_files(self, host, username, password, list_of_files):
+    def transfer_files(self, host, list_of_files):
         try:
-            self.ssh.connect(host, username=username, password=password, timeout=5, port=self.ssh_port)
+            self.ssh.connect(
+                host, username=user.SSH_user_name, password=user.SSH_password, timeout=5, port=self.ssh_port)
             self.sftp = self.ssh.open_sftp()
             try:
                 self.sftp.chdir(self.remote_path)
@@ -257,10 +260,10 @@ class SSHRemoteOperations:
             for file_to_transfer in list_of_files:
                 self.sftp.put(self.local_path + "/" + file_to_transfer, self.remote_path + "/" + file_to_transfer)
             self.sftp.close()
-            print formatter.print_green("File transfer to host %s OK" % host)
+            self.ssh.close()
+            return formatter.green("File transfer to host %s OK" % host)
         except Exception, e:
-            print formatter.print_red("File transfer to %s Failed! " % host + e.message)
-        self.ssh.close()
+            return formatter.red("File transfer to %s Failed! " % host + e.message)
 
     def return_remote_command_std_output(self, host, remote_command):
         try:
@@ -309,6 +312,8 @@ hosts = Hosts()
 
 
 def get_api_ready():
+    mgmt.server = mgmt.get_management_server()
+    user.get_api_user()
     nvmesh.api_user_name = user.API_user_name
     nvmesh.api_password = user.API_password
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -663,20 +668,21 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
 
 
 def manage_mcm(clients, action):
-    for client in get_client_list():
-        if clients is not None and client.split('.')[0] not in clients:
-            continue
-        else:
-            ssh = SSHRemoteOperations()
-            if action == "stop":
-                ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
-                print client, "\tStopped the MangaementCM services."
-            elif action == "start":
-                ssh.execute_remote_command(client, CMD_START_NVMESH_MCM)
-                print client, "\tStarted the MangaementCM services."
-            elif action == "restart":
-                ssh.execute_remote_command(client, CMD_RESTART_NVMESH_MCM)
-                print client, "\tRestarted the MangaementCM services."
+    if clients is not None:
+        client_list = clients
+    else:
+        client_list = get_client_list()
+        ssh = SSHRemoteOperations()
+    for client in client_list:
+        if action == "stop":
+            ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
+            print client, "\tStopped the MangaementCM services."
+        elif action == "start":
+            ssh.execute_remote_command(client, CMD_START_NVMESH_MCM)
+            print client, "\tStarted the MangaementCM services."
+        elif action == "restart":
+            ssh.execute_remote_command(client, CMD_RESTART_NVMESH_MCM)
+            print client, "\tRestarted the MangaementCM services."
 
 
 def manage_cluster(details, action, prefix):
@@ -717,7 +723,6 @@ def manage_cluster(details, action, prefix):
 
 
 def run_command(command, scope, prefix, parallel, server_list):
-    command_output = []
     host_list = []
     ssh = SSHRemoteOperations()
     command_line = " ".join(command)
@@ -736,30 +741,37 @@ def run_command(command, scope, prefix, parallel, server_list):
             host_list = mgmt.get_management_server_list()
         if scope == 'hosts':
             host_list = Hosts().manage_hosts('get', None)
+    host_list = set(host_list)
+    command_return_list = []
     if parallel is True:
-        process_pool = Pool(len(set(host_list)))
+        process_pool = Pool(len(host_list))
         parallel_execution_map = []
-        for host in set(host_list):
+        for host in host_list:
             parallel_execution_map.append([host, command_line])
         command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
         process_pool.close()
-        output = []
-        if prefix is True:
-            for command_return in command_return_list:
-                output.append(formatter.add_line_prefix(command_return[0], command_return[1][1]))
-            return "\n".join(output)
-        else:
-            for command_return in command_return_list:
-                output.append(command_return[1][1])
-            return "\n".join(output)
     else:
-        for host in set(host_list):
-            if prefix is True:
-                command_output.append(formatter.add_line_prefix(host, ssh.return_remote_command_std_output(
-                    host, command_line)[1]))
+        for host in host_list:
+            command_return_list.append([host, ssh.return_remote_command_std_output(host, command_line)])
+    output = []
+    for command_return in command_return_list:
+            if command_return[1][0] != 0:
+                output_line = formatter.red(" ".join(["Return Code %s," % (
+                    command_return[1][0]), command_return[1][1]]))
+                if prefix is True:
+                    output.append(formatter.add_line_prefix(command_return[0], output_line))
+                else:
+                    output.append(output_line)
             else:
-                command_output.append(ssh.return_remote_command_std_output(host, command_line)[1])
-        return "\n".join(command_output)
+                if len(command_return[1][1]) < 1:
+                    output_line = formatter.green("OK")
+                else:
+                    output_line = command_return[1][1]
+                if prefix is True:
+                    output.append(formatter.add_line_prefix(command_return[0], output_line))
+                else:
+                    output.append(output_line)
+    return "\n".join(output)
 
 
 def run_parallel_ssh_command(argument):
@@ -911,6 +923,7 @@ E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environ
 cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status.
 E.g. 'check targets' will check the NVMesh target services throughout the cluster."""
         action = "check"
+        user.get_ssh_user()
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
                                                args.parallel))
@@ -1104,6 +1117,7 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
         """Run a remote shell command across the whole NVMesh cluster, or just the targets, clients, managers or a list
         of selected servers and hosts.
 Excample: runcmd managers -c systemctl status mongod"""
+        user.get_ssh_user()
         self.poutput(run_command(args.command, args.scope, args.host_prefix, args.parallel, args.servers))
 
 
@@ -1116,9 +1130,6 @@ def start_shell():
             history.write("")
     readline.read_history_file(history_file)
     atexit.register(readline.write_history_file, history_file)
-    mgmt.server = mgmt.get_management_server()
-    user.get_api_user()
-    user.get_ssh_user()
     shell = NvmeshShell()
     if len(sys.argv) > 1:
         shell.onecmd(' '.join(sys.argv[1:]))
