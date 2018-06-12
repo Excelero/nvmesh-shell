@@ -170,7 +170,8 @@ class UserCredentials:
         self.API_password = None
         self.SSH_secrets_file = os.path.expanduser('~/.nvmesh_shell_secrets')
         self.API_secrets_file = os.path.expanduser('~/.nvmesh_api_secrets')
-        self.secrets = None
+        self.SSH_secrets = None
+        self.API_secrets = None
 
     def save_ssh_user(self):
         if self.SSH_user_name is None or self.SSH_password is None:
@@ -192,34 +193,34 @@ class UserCredentials:
 
     def get_ssh_user(self):
         try:
-            self.secrets = open(self.SSH_secrets_file, 'r').read().split(' ')
+            self.SSH_secrets = open(self.SSH_secrets_file, 'r').read().split(' ')
         except Exception, e:
             pass
-        if self.secrets is None:
+        if self.SSH_secrets is None:
             formatter.print_yellow("SSH user credentials not set yet!")
             self.SSH_user_name = raw_input("Provide the root level SSH user name: ")
             self.SSH_password = getpass.getpass("Please provide the SSH password: ")
             self.save_ssh_user()
             return self.SSH_user_name
         else:
-            self.SSH_user_name = self.secrets[0]
-            self.SSH_password = base64.b64decode(self.secrets[1])
+            self.SSH_user_name = self.SSH_secrets[0]
+            self.SSH_password = base64.b64decode(self.SSH_secrets[1])
             return self.SSH_user_name
 
     def get_api_user(self):
         try:
-            self.secrets = open(self.API_secrets_file, 'r').read().split(' ')
+            self.API_secrets = open(self.API_secrets_file, 'r').read().split(' ')
         except Exception, e:
             pass
-        if self.secrets is None:
+        if self.API_secrets is None:
             formatter.print_yellow("API user credentials not set yet!")
             self.API_user_name = raw_input("Provide the root level API user name: ")
             self.API_password = getpass.getpass("Please provide the API password: ")
             self.save_api_user()
             return self.API_user_name
         else:
-            self.API_user_name = self.secrets[0]
-            self.API_password = base64.b64decode(self.secrets[1])
+            self.API_user_name = self.API_secrets[0]
+            self.API_password = base64.b64decode(self.API_secrets[1])
             return self.API_user_name
 
 
@@ -814,6 +815,8 @@ class NvmeshShell(Cmd):
 
     @with_argparser(show_parser)
     def do_show(self, args):
+        mgmt.get_management_server()
+        user.get_api_user()
         """List and view specific Nvmesh objects and its properties.
 The 'list sub-command allows output in a table, tabulator separated value or JSON format.
 By default it will list all the objects and their properties in the cluster.
@@ -828,9 +831,9 @@ E.g. 'list targets -s target1 target2'"""
         elif args.nvmesh_object == 'volumes':
             self.poutput(show_volumes(args.details, args.tsv, args.json, args.volumes, args.short_names))
         elif args.nvmesh_object == 'sshuser':
-            print(user.SSH_user_name)
+            self.poutput(user.get_ssh_user())
         elif args.nvmesh_object == 'apiuser':
-            print(user.API_user_name)
+            self.poutput(user.get_api_user())
         elif args.nvmesh_object == 'manager':
             print(mgmt.server)
         elif args.nvmesh_object == 'cluster':
@@ -922,8 +925,10 @@ E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environ
         """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your
 cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status.
 E.g. 'check targets' will check the NVMesh target services throughout the cluster."""
-        action = "check"
         user.get_ssh_user()
+        user.get_api_user()
+        mgmt.get_management_server()
+        action = "check"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
                                                args.parallel))
@@ -958,6 +963,9 @@ E.g. 'check targets' will check the NVMesh target services throughout the cluste
         """The 'stop' sub-command will stop the selected NVMesh services on all managers, targets and clients.
 Or it will stop the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
 E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
+        user.get_ssh_user()
+        user.get_api_user()
+        mgmt.get_management_server()
         action = "stop"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
@@ -992,6 +1000,9 @@ E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
         """The 'start' sub-command will start the selected NVMesh services on all managers, targets and clients.
 Or it will start the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
 E.g. 'start cluster' will start all the NVMesh services throughout the cluster."""
+        user.get_ssh_user()
+        user.get_api_user()
+        mgmt.get_management_server()
         action = "start"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
@@ -1029,6 +1040,9 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
         """The 'restart' sub-command will restart the selected NVMesh services on all managers, targets and clients.
 Or it will restart the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
 E.g. 'restart managers' will restart the NVMesh management service."""
+        user.get_ssh_user()
+        user.get_api_user()
+        mgmt.get_management_server()
         action = 'restart'
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
@@ -1118,6 +1132,8 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
         of selected servers and hosts.
 Excample: runcmd managers -c systemctl status mongod"""
         user.get_ssh_user()
+        user.get_api_user()
+        mgmt.get_management_server()
         self.poutput(run_command(args.command, args.scope, args.host_prefix, args.parallel, args.servers))
 
 
