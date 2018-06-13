@@ -955,7 +955,7 @@ E.g. 'list targets -s target1 target2'"""
                             help='Name of the volume, must be unique, will be the ID of the volume.')
     add_parser.add_argument('-N', '--number-of-mirrors', nargs=1, required=False,
                             help='Number of mirrors to use.')
-    add_parser.add_argument('-c', '--count', nargs=1, required=False, default=1,
+    add_parser.add_argument('-c', '--count', nargs=1, required=False,
                             help='Number of volumes to create and add. 100 Max.')
     add_parser.add_argument('-t', '--target-class', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific target classes.')
