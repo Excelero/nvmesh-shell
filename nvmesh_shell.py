@@ -98,6 +98,14 @@ class OutputFormatter:
         return '\n'.join(text_lines)
 
 
+class Payload(dict):
+    def __str__(self):
+        return json.dumps(self)
+
+    def __repr__(self):
+        return json.dumps(self)
+
+
 class Hosts:
     def __init__(self):
         self.host_list = []
@@ -781,6 +789,87 @@ def run_parallel_ssh_command(argument):
     return argument[0], output
 
 
+def manage_volume(action, name, capacity, description, disk_classes, server_classes, limit_by_nodes, limit_by_disks,
+                  awareness, raid_level, stripe_width, number_of_mirrors, vpg):
+    get_api_ready()
+    api_payload = {}
+    payload = {}
+    if action == "create":
+        if name is None:
+            return formatter.yellow(
+                "Volume name missing! Use the -n argument to provide a volume name")
+        if capacity is None:
+            return formatter.yellow(
+                "Size/capacity information missing! Use the -S argument to provide the volume size/capacity")
+        payload = {
+            "name": name,
+            "capacity": "MAX" if str(capacity[0]).upper() == "MAX" else int(humanfriendly.parse_size(capacity[0],
+                                                                                                     binary=True)),
+        }
+        if description is not None:
+            payload["description"] = description[0]
+        if disk_classes is not None:
+            payload["diskClasses"] = disk_classes
+        if server_classes is not None:
+            payload["serverClasses"] = server_classes
+        if limit_by_nodes is not None:
+            payload["limitByNodes"] = limit_by_nodes
+        if limit_by_disks is not None:
+            payload["limitByDisks"] = limit_by_disks
+        if awareness is not None:
+            payload["awareness"] = awareness[0]
+        if raid_level is None and vpg is None:
+            return formatter.yellow(
+                    "Raid level information missing! Use the -r argument to set the raid level.")
+        if raid_level is not None and vpg is None:
+            payload["RAIDLevel"] = RAID_LEVELS[raid_level[0]]
+            if raid_level[0] == "lvm":
+                pass
+            elif raid_level[0] == "0":
+                payload["stripeSize"] = 32
+                if stripe_width is None:
+                    return formatter.yellow(
+                        "Stripe width information missing! Use the -w argument to set the stripe width.")
+                payload["stripeWidth"] = int(stripe_width[0])
+            elif raid_level[0] == "1":
+                payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
+            elif raid_level[0] == "10":
+                payload["stripeSize"] = 32
+                if stripe_width is None:
+                    return formatter.yellow(
+                        "Stripe width information missing! Use the -w argument to set the stripe width.")
+                payload["stripeWidth"] = int(stripe_width[0])
+                payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
+        if vpg is not None:
+            payload["VPG"] = vpg[0]
+        api_payload["create"] = [payload]
+        api_payload["remove"] = []
+        api_payload["edit"] = []
+        api_return = json.loads(nvmesh.manage_volume(api_payload))
+        if api_return['create'][0]['success'] is True:
+            return " ".join(["Volume", name, "successfully created.", formatter.green('OK')])
+
+        else:
+            return " ".join([api_return['create'][0]['err'], formatter.red('Failed')])
+
+    elif action == 'remove':
+        api_return = []
+        output = []
+        for volume in name:
+            payload["_id"] = volume
+            api_payload["remove"] = [payload]
+            api_payload["create"] = []
+            api_payload["edit"] = []
+            api_return.append(json.loads(nvmesh.manage_volume(api_payload)))
+        for item in api_return:
+            if item['remove'][0]['success'] is True:
+                output.append(" ".join(["Volume", item['remove'][0]['id'], "successfully deleted.",
+                                        formatter.green('OK')]))
+            else:
+                output.append(" ".join([item['remove'][0]['ex'], formatter.red('Failed')]))
+        return "\n".join(output)
+
+
 class NvmeshShell(Cmd):
 
     def __init__(self):
@@ -851,7 +940,7 @@ E.g. 'list targets -s target1 target2'"""
     add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'], nargs="?",
                             help='Add hosts to this shell environment')
     add_parser.add_argument('-r', '--raid_level', nargs=1, required=False,
-                            help='The RAID level of the volume. Options: LVM_JBOD, RAID0, RAID1, RAID10')
+                            help='The RAID level of the volume. Options: lvm, 0, 1, 10')
     add_parser.add_argument('-v', '--vpg', nargs=1, required=False,
                             help='Optional - The volume provisioning group to use.')
     add_parser.add_argument('-o', '--domain', nargs=1, required=False,
@@ -864,8 +953,10 @@ E.g. 'list targets -s target1 target2'"""
                             help='Optional - Limit volume allocation to specific target nodes.')
     add_parser.add_argument('-n', '--name', nargs=1, required=False,
                             help='Name of the volume, must be unique, will be the ID of the volume.')
+    add_parser.add_argument('-N', '--number-of-mirrors', nargs=1, required=False,
+                            help='Number of mirrors to use.')
     add_parser.add_argument('-c', '--count', nargs=1, required=False, default=1,
-                            help='Number of volumes to create and add.')
+                            help='Number of volumes to create and add. 100 Max.')
     add_parser.add_argument('-t', '--target-class', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific target classes.')
     add_parser.add_argument('-d', '--drive-class', nargs='+', required=False,
@@ -874,7 +965,7 @@ E.g. 'list targets -s target1 target2'"""
                             help='Number of disks to use. Required for R0 and R1.')
     add_parser.add_argument('-s', '--servers', nargs='+', required=False,
                             help='Specify a single server or a list of servers.')
-    add_parser.add_argument('-S', '--size', nargs='+', required=False,
+    add_parser.add_argument('-S', '--size', nargs=1, required=False,
                             help='Specify a the size of the new volume. The volumes size value is base*2/binary. '
                                  'Example: -S 12GB or 12GiB will create a volume with a size of 12884901888 bytes.'
                                  'Some valid input formats samples: xGB, x GB, x gigabyte, x GiB or xG')
@@ -888,12 +979,33 @@ a new volume to the NVMesh cluster.
         action = "add"
         if args.nvmesh_object == 'hosts':
             hosts.manage_hosts(action, args.servers)
+        elif args.nvmesh_object == 'volume':
+            if args.count is not None:
+                if int(args.count[0]) > 100:
+                    self.poutput(formatter.yellow("Count too high! The max is 100."))
+                    return
+                else:
+                    count = 1
+                    while (count <= int(args.count[0])):
+                        name = "".join([args.name[0], "%03d" % (count,)])
+                        count = count + 1
+                        self.poutput(manage_volume('create', name, args.size, args.description, args.drive_class,
+                                                   args.target_class, args.limit_by_targets, args.limit_by_disk,
+                                                   args.domain,
+                                                   args.raid_level, args.stripe_width, args.number_of_mirrors,
+                                                   args.vpg))
+            else:
+                self.poutput(manage_volume('create', args.name[0], args.size, args.description, args.drive_class,
+                          args.target_class, args.limit_by_targets, args.limit_by_disk, args.domain,
+                          args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg))
 
     delete_parser = argparse.ArgumentParser()
-    delete_parser.add_argument('nvmesh_object', choices=['hosts'],
+    delete_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],
                                nargs="?",
                                help='Add hosts/servers to this shell environment')
     delete_parser.add_argument('-s', '--server', nargs='+', required=False,
+                               help='Specify a single server or a list of servers.')
+    delete_parser.add_argument('-v', '--volume', nargs='+', required=False,
                                help='Specify a single server or a list of servers.')
 
     @with_argparser(delete_parser)
@@ -905,6 +1017,9 @@ E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environ
         action = "delete"
         if args.nvmesh_object == 'hosts':
             hosts.manage_hosts(action, args.server)
+        elif args.nvmesh_object == 'volume':
+            self.poutput(manage_volume('remove', args.volume, None, None, None, None, None, None, None, None, None,
+                                       None, None))
 
     check_parser = argparse.ArgumentParser()
     check_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster'],

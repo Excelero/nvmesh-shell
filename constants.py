@@ -23,9 +23,9 @@
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
-    'r0': 'Striped RAID-0',
-    'r1': 'Mirrored RAID-1',
-    'r10': 'Striped & Mirrored RAID-10'
+    '0': 'Striped RAID-0',
+    '1': 'Mirrored RAID-1',
+    '10': 'Striped & Mirrored RAID-10'
 }
 
 REGEX_HCAID = r"(mlx5_\d*)"

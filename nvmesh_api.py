@@ -154,58 +154,11 @@ class Api:
         except Exception, e:
             return e.message
 
-    def create_volume(self, arguments):
+    def manage_volume(self, payload):
+        self.api_payload = {}
+        self.api_payload = payload
         self.api_endpoint = '/volumes/save'
-
-        payload = {
-            'name': arguments['name'],
-            'capacity': 'MAX' if str(arguments['capacity']).upper() == 'MAX' else humanfriendly.parse_size(
-                arguments['capacity'], binary=True),
-        }
-
-        if 'description' in arguments:
-            payload['description'] = arguments['description']
-
-        if 'diskClasses' in arguments:
-            payload['diskClasses'] = arguments['diskClasses']
-
-        if 'serverClasses' in arguments:
-            payload['serverClasses'] = arguments['serverClasses']
-
-        if 'limitByNodes' in arguments:
-            payload['limitByNodes'] = arguments['limitByNodes']
-
-        if 'limitByDisks' in arguments:
-            payload['limitByDisks'] = arguments['limitByDisks']
-
-        if 'awareness' in arguments:
-            payload['awareness'] = arguments['awareness']
-
-        if 'RAIDLevel' in arguments and 'VPG' not in arguments:
-            payload['RAIDLevel'] = arguments['RAIDLevel']
-
-            if arguments['RAIDLevel'] == constants.RAID_LEVELS['lvm']:
-                pass
-
-            elif arguments['RAIDLevel'] == constants.RAID_LEVELS['r0']:
-                payload['stripeSize'] = 32
-                payload['stripeWidth'] = arguments['stripeWidth']
-
-            elif arguments['RAIDLevel'] == constants.RAID_LEVELS['1']:
-                payload['numberOfMirrors'] = arguments['numberOfMirrors'] if 'numberOfMirrors' in arguments else 1
-
-            elif arguments['RAIDLevel'] == constants.RAID_LEVELS['r10']:
-                payload['stripeSize'] = 32
-                payload['stripeWidth'] = arguments['stripeWidth']
-                payload['numberOfMirrors'] = arguments['numberOfMirrors']
-
-        if 'VPG' in arguments:
-            payload['VPG'] = arguments['VPG']
-
-        self.api_payload['create'] = [payload]
-        self.api_payload['remove'] = []
-        self.api_payload['edit'] = []
-        self. err, self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
+        self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
                                                                                self.api_port, self.api_endpoint),
                                                              json=self.api_payload)
-        return self.err, self.api_response
+        return self.api_response.content
