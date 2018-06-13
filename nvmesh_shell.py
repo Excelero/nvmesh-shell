@@ -795,9 +795,6 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
     api_payload = {}
     payload = {}
     if action == "create":
-        if name is None:
-            return formatter.yellow(
-                "Volume name missing! Use the -n argument to provide a volume name")
         if capacity is None:
             return formatter.yellow(
                 "Size/capacity information missing! Use the -S argument to provide the volume size/capacity")
@@ -980,13 +977,17 @@ a new volume to the NVMesh cluster.
         if args.nvmesh_object == 'hosts':
             hosts.manage_hosts(action, args.servers)
         elif args.nvmesh_object == 'volume':
+            if args.name is None:
+                print formatter.yellow(
+                    "Volume name missing! Use the -n argument to provide a volume name")
+                return
             if args.count is not None:
                 if int(args.count[0]) > 100:
                     self.poutput(formatter.yellow("Count too high! The max is 100."))
                     return
                 else:
                     count = 1
-                    while (count <= int(args.count[0])):
+                    while count <= int(args.count[0]):
                         name = "".join([args.name[0], "%03d" % (count,)])
                         count = count + 1
                         self.poutput(manage_volume('create', name, args.size, args.description, args.drive_class,
@@ -1002,17 +1003,17 @@ a new volume to the NVMesh cluster.
     delete_parser = argparse.ArgumentParser()
     delete_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],
                                nargs="?",
-                               help='Delete hosts/servers in this shell environment or delete NVMesh volumes in the cluster')
+                               help='Add hosts/servers to this shell environment')
     delete_parser.add_argument('-s', '--server', nargs='+', required=False,
                                help='Specify a single server or a list of servers.')
     delete_parser.add_argument('-v', '--volume', nargs='+', required=False,
-                               help='Specify a single volume or a list of volumes.')
+                               help='Specify a single server or a list of servers.')
 
     @with_argparser(delete_parser)
     def do_delete(self, args):
         """The 'delete' sub-comand will let you delete nvmesh objects in your cluster or nvmesh-shell
 runtime environment.
-E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environment and 'delete volume will delete NVMesh volumes'.
+E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environment.
 """
         action = "delete"
         if args.nvmesh_object == 'hosts':
