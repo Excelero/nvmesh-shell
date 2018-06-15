@@ -497,6 +497,7 @@ def show_volumes(details, csv_format, json_format, volumes, short):
                             continue
                         else:
                             remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits']
+                            target_disk_list.append(segment['diskID'])
                             if short is True:
                                 target_list.append(segment['node_id'].split('.')[0])
                             else:
