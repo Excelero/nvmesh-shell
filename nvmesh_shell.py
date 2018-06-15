@@ -39,6 +39,29 @@ import urllib3
 from multiprocessing import Pool
 
 
+class ArgsUsageOutputFormatter(argparse.HelpFormatter):
+    # use defined argument order to display usage
+    def _format_usage(self, usage, actions, groups, prefix):
+        if prefix is None:
+            prefix = 'usage: '
+
+        # if usage is specified, use that
+        if usage is not None:
+            usage = usage % dict(prog=self._prog)
+
+        # if no optionals or positionals are available, usage is just prog
+        elif usage is None and not actions:
+            usage = '%(prog)s' % dict(prog=self._prog)
+        elif usage is None:
+            prog = '%(prog)s' % dict(prog=self._prog)
+            # build full usage string
+            action_usage = self._format_actions_usage(actions, groups)  # NEW
+            usage = ' '.join([s for s in [prog, action_usage] if s])
+            # omit the long line wrapping code
+        # prefix with 'usage:'
+        return '%s%s\n\n' % (prefix, usage)
+
+
 class OutputFormatter:
     def __init__(self):
         self.text = None
@@ -407,13 +430,25 @@ def get_target_list():
     return target_list
 
 
-def get_client_list():
+def get_client_list(full):
     get_api_ready()
     clients_json = json.loads(nvmesh.get_clients())
     client_list = []
     for client in clients_json:
-        client_list.append(client['client_id'].split('.')[0])
+        if full is True:
+            client_list.append(client['client_id'])
+        else:
+            client_list.append(client['client_id'].split('.')[0])
     return client_list
+
+
+def get_volume_list():
+    get_api_ready()
+    volume_json = json.loads(nvmesh.get_volumes())
+    volume_list = []
+    for volume in volume_json:
+        volume_list.append(volume['_id'].split('.')[0])
+    return volume_list
 
 
 def show_clients(csv_format, json_format, server, short):
@@ -599,12 +634,12 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
     else:
         if scope == 'cluster':
             host_list = get_target_list()
-            host_list.extend(get_client_list())
+            host_list.extend(get_client_list(False))
             host_list.extend(mgmt.get_management_server_list())
         if scope == 'target':
             host_list = get_target_list()
         if scope == 'client':
-            host_list = get_client_list()
+            host_list = get_client_list(False)
         if scope == 'mgr':
             host_list = mgmt.get_management_server_list()
     if parallel is True:
@@ -625,7 +660,7 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
             if command_return[1][0] == 0:
                 if details is True:
                     output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
-                                                 formatter.green('OK')])))
+                                                           formatter.green('OK')])))
                     if prefix is True:
                         output.append(formatter.add_line_prefix(command_return[0], (
                             command_return[1][1][:command_return[1][1].rfind('\n')])) + "\n")
@@ -740,12 +775,12 @@ def run_command(command, scope, prefix, parallel, server_list):
     else:
         if scope == 'cluster':
             host_list = get_target_list()
-            host_list.extend(get_client_list())
+            host_list.extend(get_client_list(False))
             host_list.extend(mgmt.get_management_server_list())
         if scope == 'targets':
             host_list = get_target_list()
         if scope == 'clients':
-            host_list = get_client_list()
+            host_list = get_client_list(False)
         if scope == 'managers':
             host_list = mgmt.get_management_server_list()
         if scope == 'hosts':
@@ -764,22 +799,22 @@ def run_command(command, scope, prefix, parallel, server_list):
             command_return_list.append([host, ssh.return_remote_command_std_output(host, command_line)])
     output = []
     for command_return in command_return_list:
-            if command_return[1][0] != 0:
-                output_line = formatter.red(" ".join(["Return Code %s," % (
-                    command_return[1][0]), command_return[1][1]]))
-                if prefix is True:
-                    output.append(formatter.add_line_prefix(command_return[0], output_line))
-                else:
-                    output.append(output_line)
+        if command_return[1][0] != 0:
+            output_line = formatter.red(" ".join(["Return Code %s," % (
+                command_return[1][0]), command_return[1][1]]))
+            if prefix is True:
+                output.append(formatter.add_line_prefix(command_return[0], output_line))
             else:
-                if len(command_return[1][1]) < 1:
-                    output_line = formatter.green("OK")
-                else:
-                    output_line = command_return[1][1]
-                if prefix is True:
-                    output.append(formatter.add_line_prefix(command_return[0], output_line))
-                else:
-                    output.append(output_line)
+                output.append(output_line)
+        else:
+            if len(command_return[1][1]) < 1:
+                output_line = formatter.green("OK")
+            else:
+                output_line = command_return[1][1]
+            if prefix is True:
+                output.append(formatter.add_line_prefix(command_return[0], output_line))
+            else:
+                output.append(output_line)
     return "\n".join(output)
 
 
@@ -817,7 +852,7 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
             payload["awareness"] = awareness[0]
         if raid_level is None and vpg is None:
             return formatter.yellow(
-                    "Raid level information missing! Use the -r argument to set the raid level.")
+                "Raid level information missing! Use the -r argument to set the raid level.")
         if raid_level is not None and vpg is None:
             payload["RAIDLevel"] = RAID_LEVELS[raid_level[0]]
             if raid_level[0] == "lvm":
@@ -867,29 +902,39 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
         return "\n".join(output)
 
 
+def client_control_job(action, clients, volumes):
+    get_api_ready()
+    for client in clients:
+        for volume in volumes:
+            payload = {
+                '_id': client,
+                'controlJobs': [{
+                    'uuid': volume,
+                    'control': CONTROL_JOBS[action]
+                }]
+            }
+            print nvmesh.set_control_jobs(payload)
+
+
 class NvmeshShell(Cmd):
 
     def __init__(self):
         Cmd.__init__(self, use_ipython=True)
 
     prompt = "\033[1;34mnvmesh #\033[0m "
-    show_parser = argparse.ArgumentParser()
+    show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     show_parser.add_argument('nvmesh_object', choices=['cluster', 'targets', 'clients', 'volumes', 'manager',
                                                        'sshuser', 'apiuser', 'vpgs', 'driveclasses', 'targetclasses',
                                                        'hosts'],
-                             default='cluster',
-                             nargs='?',
-                             help='Define/specify the NVMesh object you want to list or view.')
-    show_parser.add_argument('-a', '--all', required=False, default=True, action='store_const', const=True,
-                             help='List and view all NVMesh objects throughout the cluster')
+                             help='Define/specify the scope or the NVMesh object you want to list or view.')
     show_parser.add_argument('-c', '--classes', nargs='+', required=False,
-                             help='View a single or a list of NVMesh drive or target classes.')
+                             help='A single or a space separated list of NVMesh drives or target classes.')
     show_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                              help='Show more details.')
     show_parser.add_argument('-j', '--json', required=False, action='store_const', const=True,
                              help='Format output as JSON.')
     show_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                             help='List or view NVMesh objects of a single server or a list of servers.')
+                             help='Space separated list or view NVMesh objects of a single server or a list of servers.')
     show_parser.add_argument('-S', '--short-names', required=False, action='store_const', const=True,
                              help='Show short hostnames.')
     show_parser.add_argument('-t', '--tsv', required=False, action='store_const', const=True,
@@ -901,15 +946,10 @@ class NvmeshShell(Cmd):
 
     @with_argparser(show_parser)
     def do_show(self, args):
+        """List and view specific Nvmesh objects and its properties.
+The 'list sub-command allows output in a table, tabulator separated value or JSON format. E.g 'list targets' will list all targets. In case you want to see the properties of only one or just a few you need to use the '-s' or '--server' option to specify single or a list of servers/targets. E.g. 'list targets -s target1 target2'"""
         mgmt.get_management_server()
         user.get_api_user()
-        """List and view specific Nvmesh objects and its properties.
-The 'list sub-command allows output in a table, tabulator separated value or JSON format.
-By default it will list all the objects and their properties in the cluster.
-E.g 'list targets' will list all targets.
-In case you want to see the properties of only one or just a few you need to use the '-s' or '--server'
-option to specify single or a list of servers/targets.
-E.g. 'list targets -s target1 target2'"""
         if args.nvmesh_object == 'targets':
             self.poutput(show_targets(args.details, args.tsv, args.json, args.servers, args.short_names))
         elif args.nvmesh_object == 'clients':
@@ -921,7 +961,7 @@ E.g. 'list targets -s target1 target2'"""
         elif args.nvmesh_object == 'apiuser':
             self.poutput(user.get_api_user())
         elif args.nvmesh_object == 'manager':
-            print(mgmt.server)
+            self.poutput(mgmt.server)
         elif args.nvmesh_object == 'cluster':
             self.poutput(show_cluster(args.tsv, args.json))
         elif args.nvmesh_object == 'vpgs':
@@ -933,17 +973,17 @@ E.g. 'list targets -s target1 target2'"""
         elif args.nvmesh_object == 'hosts':
             self.poutput("\n".join(hosts.manage_hosts("get", None)))
 
-    add_parser = argparse.ArgumentParser()
-    add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'], nargs="?",
-                            help='Add hosts to this shell environment')
+    add_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],
+                            help='Add hosts to this shell environment or add/creat new NVMesh volumes.')
     add_parser.add_argument('-r', '--raid_level', nargs=1, required=False,
                             help='The RAID level of the volume. Options: lvm, 0, 1, 10')
     add_parser.add_argument('-v', '--vpg', nargs=1, required=False,
                             help='Optional - The volume provisioning group to use.')
     add_parser.add_argument('-o', '--domain', nargs=1, required=False,
-                            help='Optional - Domain to use.')
+                            help='Optional - Domain/awareness information to use.')
     add_parser.add_argument('-D', '--description', nargs=1, required=False,
-                            help='Optional - Description')
+                            help='Optional - Volume description')
     add_parser.add_argument('-l', '--limit-by-disk', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific drives.')
     add_parser.add_argument('-L', '--limit-by-targets', nargs='+', required=False,
@@ -961,18 +1001,15 @@ E.g. 'list targets -s target1 target2'"""
     add_parser.add_argument('-w', '--stripe-width', nargs=1, required=False,
                             help='Number of disks to use. Required for R0 and R1.')
     add_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                            help='Specify a single server or a list of servers.')
+                            help='Specify a single server or a space separated list of servers.')
     add_parser.add_argument('-S', '--size', nargs=1, required=False,
-                            help='Specify a the size of the new volume. The volumes size value is base*2/binary. '
+                            help='Specify the size of the new volume. The volumes size value is base*2/binary. '
                                  'Example: -S 12GB or 12GiB will create a volume with a size of 12884901888 bytes.'
                                  'Some valid input formats samples: xGB, x GB, x gigabyte, x GiB or xG')
 
     @with_argparser(add_parser)
     def do_add(self, args):
-        """The 'add' sub-comand will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment.
-E.g. 'add hosts' will add host/server entries to your nvmesh-shell environment while 'add volume' will create and add
-a new volume to the NVMesh cluster.
-"""
+        """The 'add' sub-command will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment. E.g. 'add hosts' will add host entries to your nvmesh-shell environment while 'add volume' will create and add a new volume to the NVMesh cluster."""
         action = "add"
         if args.nvmesh_object == 'hosts':
             hosts.manage_hosts(action, args.servers)
@@ -997,82 +1034,119 @@ a new volume to the NVMesh cluster.
                                                    args.vpg))
             else:
                 self.poutput(manage_volume('create', args.name[0], args.size, args.description, args.drive_class,
-                          args.target_class, args.limit_by_targets, args.limit_by_disk, args.domain,
-                          args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg))
+                                           args.target_class, args.limit_by_targets, args.limit_by_disk, args.domain,
+                                           args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg))
 
-    delete_parser = argparse.ArgumentParser()
+    delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     delete_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],
-                               nargs="?",
                                help='Add hosts/servers to this shell environment')
-    delete_parser.add_argument('-s', '--server', nargs='+', required=False,
+    delete_group = delete_parser.add_mutually_exclusive_group()
+    delete_group.add_argument('-s', '--server', nargs='+',
                                help='Specify a single server or a list of servers.')
-    delete_parser.add_argument('-v', '--volume', nargs='+', required=False,
-                               help='Specify a single server or a list of servers.')
+    delete_group.add_argument('-v', '--volume', nargs='+',
+                               help='Specify a single volume or a space seprataed list of volumes.')
 
     @with_argparser(delete_parser)
     def do_delete(self, args):
-        """The 'delete' sub-comand will let you delete nvmesh objects in your cluster or nvmesh-shell
-runtime environment.
-E.g. 'delete hosts' will delete host/server entries in your nvmesh-shell environment.
-"""
+        """The 'delete' sub-command will let you delete nvmesh objects in your cluster or nvmesh-shell
+runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh-shell environment and 'delete volume' will delete NVMesh volumes in your NVMesh cluster."""
         action = "delete"
         if args.nvmesh_object == 'hosts':
             hosts.manage_hosts(action, args.server)
         elif args.nvmesh_object == 'volume':
-            self.poutput(manage_volume('remove', args.volume, None, None, None, None, None, None, None, None, None,
+            if args.volume[0] == 'all':
+                volume_list = get_volume_list()
+                self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None, None,
+                                           None, None))
+            else:
+                self.poutput(manage_volume('remove', args.volume, None, None, None, None, None, None, None, None, None,
                                        None, None))
 
-    check_parser = argparse.ArgumentParser()
+    attach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    attach_parser.add_argument('-c', '--client', nargs='+', required=True,
+                               help='Specify a single server or a space seprataed list of servers.')
+    attach_parser.add_argument('-v', '--volume', nargs='+', required=True,
+                               help='Specify a single volume or a space seprataed list of volumes.')
+
+    @with_argparser(attach_parser)
+    def do_attach(self, args):
+        """The 'attach' sub-command will let you attach NVMesh volumes to the clients in your NVMesh cluster."""
+        if args.client[0] == 'all':
+            client_list = get_client_list(True)
+        else:
+            client_list = args.client
+        if args.volume[0] == 'all':
+            volume_list = get_volume_list()
+        else:
+            volume_list = args.volume
+        self.poutput(client_control_job('attach', client_list, volume_list))
+
+    detach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    detach_parser.add_argument('-c', '--client', nargs='+', required=True,
+                               help='Specify a single server or a space seprataed list of servers.')
+    detach_parser.add_argument('-v', '--volume', nargs='+', required=True,
+                               help='Specify a single volume or a space seprataed list of volumes.')
+
+    @with_argparser(detach_parser)
+    def do_detach(self, args):
+        """The 'detach' sub-command will let you detach NVMesh volumes in your NVMesh cluster."""
+        if args.client[0] == 'all':
+            client_list = get_client_list(True)
+        else:
+            client_list = args.client
+        if args.volume[0] == 'all':
+            volume_list = get_volume_list()
+        else:
+            volume_list = args.volume
+        self.poutput(client_control_job('detach', client_list, volume_list))
+
+    check_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     check_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster'],
-                              nargs='?', default='cluster',
                               help='Specify where you want to check the NVMesh services status.')
     check_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
-                              help='List and view the detailed service information.')
-    check_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+                              help='Show detailed service information.')
+    check_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
                               help='Adds the host name at the beginning of each line. This helps to identify the '
                                    'content when piping into a grep or similar')
     check_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
-                               help='Check the hosts/servers in parallel.')
+                              help='Check the hosts/servers in parallel.')
     check_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                              help='Specify a single or a list of managers, targets or clients.')
+                              help='Specify a single or a space separated list of managers, targets or clients.')
 
     @with_argparser(check_parser)
     def do_check(self, args):
-        """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your
-cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status.
-E.g. 'check targets' will check the NVMesh target services throughout the cluster."""
+        """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status. E.g. 'check targets' will check the NVMesh target services throughout the cluster."""
         user.get_ssh_user()
         user.get_api_user()
         mgmt.get_management_server()
         action = "check"
         if args.nvmesh_object == 'targets':
-            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'clients':
-            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'managers':
-            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.details, action, args.host_prefix)
+            manage_cluster(args.details, action, args.prefix)
 
-    stop_parser = argparse.ArgumentParser()
+    stop_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     stop_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
-                             nargs='?', default='cluster',
-                             help='Specify the NVMesh service type you want to stop.')
+                             help='Specify the NVMesh service type you want to top.')
     stop_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                              help='List and view the service details.')
     stop_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
                              help="Graceful stop of all NVMesh targets in the cluster."
                                   " The default is set to 'True'")
-    stop_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+    stop_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
                              help='Adds the host name at the beginning of each line. This helps to identify the '
                                   'content when piping into a grep or similar')
     stop_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
-                              help='Stop the NVMesh services on the hosts/servers in parallel.')
+                             help='Stop the NVMesh services in parallel.')
     stop_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                             help='Specify a single or a list of managers, targets or clients.')
+                             help='Specify a single or a space separated list of managers, targets or clients.')
 
     @with_argparser(stop_parser)
     def do_stop(self, args):
@@ -1084,32 +1158,31 @@ E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
         mgmt.get_management_server()
         action = "stop"
         if args.nvmesh_object == 'targets':
-            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'clients':
-            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'managers':
-            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.details, action, args.host_prefix)
+            manage_cluster(args.details, action, args.prefix)
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.server, action)
 
-    start_parser = argparse.ArgumentParser()
+    start_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     start_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
-                              nargs='?', default='cluster',
-                              help='Specify the NVMesh service type you want to stop')
+                              help='Specify the NVMesh service type you want to start.')
     start_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                               help='List and view the service details.')
-    start_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+    start_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
                               help='Adds the host name at the beginning of each line. This helps to identify the '
                                    'content when piping into a grep or similar')
     start_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
                               help='Start the NVMesh services on the hosts/servers in parallel.')
     start_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                              help='Specify a single or a list of servers.')
+                              help='Specify a single or a space separated list of servers.')
 
     @with_argparser(start_parser)
     def do_start(self, args):
@@ -1121,35 +1194,34 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
         mgmt.get_management_server()
         action = "start"
         if args.nvmesh_object == 'targets':
-            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'clients':
-            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'managers':
-            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.details, action, args.host_prefix)
+            manage_cluster(args.details, action, args.prefix)
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.server, action)
 
-    restart_parser = argparse.ArgumentParser()
+    restart_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     restart_parser.add_argument('nvmesh_object', choices=['clients', 'targets', 'managers', 'cluster', 'mcm'],
-                                nargs='?', default='cluster',
                                 help='Specify the NVMesh service which you want to restart.')
     restart_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                                 help='List and view the service details.')
     restart_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
                                 help='Restart with a graceful stop of the targets in the cluster.'
                                      'The default is set to True')
-    restart_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+    restart_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
                                 help='Adds the host name at the beginning of each line. This helps to identify the '
                                      'content when piping into a grep or similar')
     restart_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
-                              help='Restart the NVMesh services on the hosts/servers in parallel.')
+                                help='Restart the NVMesh services on the hosts/servers in parallel.')
     restart_parser.add_argument('-s', '--servers', nargs='+', required=False,
-                                help='Specify a single or a list of servers.')
+                                help='Specify a single or a space separated list of servers.')
 
     @with_argparser(restart_parser)
     def do_restart(self, args):
@@ -1161,22 +1233,21 @@ E.g. 'restart managers' will restart the NVMesh management service."""
         mgmt.get_management_server()
         action = 'restart'
         if args.nvmesh_object == 'targets':
-            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'clients':
-            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'managers':
-            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.host_prefix,
+            self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.server, action)
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.details, action, args.host_prefix)
+            manage_cluster(args.details, action, args.prefix)
 
-    define_parser = argparse.ArgumentParser()
+    define_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     define_parser.add_argument('nvmesh_object', choices=['manager', 'sshuser', 'sshpassword', 'apiuser', 'apipassword'],
-                               nargs='?',
                                help='Specify the NVMesh shell runtime variable you want to define.')
     define_parser.add_argument('-t', '--persistent', required=False, action='store_const', const=True,
                                help='Define/Set the NVMesh runtime variable persistently.')
@@ -1185,13 +1256,13 @@ E.g. 'restart managers' will restart the NVMesh management service."""
     define_parser.add_argument('-u', '--user', nargs=1, required=False,
                                help='The username name for the user to be used.')
     define_parser.add_argument('-s', '--server', nargs='+', required=False,
-                               help='Define/Set the NVMesh management server')
+                               help='The NVMesh management server name')
 
     @with_argparser(define_parser)
     def do_define(self, args):
         """The 'define' sub-command defines/sets the shell runtime variables. It can be used to set them temporarily or
 persistently. Please note that in its current version allows to set only one NVMesh manager. If you try to provide a
-list it will use the first manager name out of that list.
+list it will use the first manager name of that list.
 E.g. 'define apiuser' will set the NVMesh API user name to be used for all the operations involving the API"""
         if args.nvmesh_object == 'sshuser':
             if args.user is None:
@@ -1228,13 +1299,13 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
         """Shows the licensing details, term and conditions. """
         self.ppaged(open('LICENSE.txt', 'r').read())
 
-    runcmd_parser = argparse.ArgumentParser()
+    runcmd_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     runcmd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster', 'hosts'],
-                               nargs='?', default='cluster',
                                help='Specify the scope where you want to run the command.')
     runcmd_parser.add_argument('-c', '--command', nargs='+', required=True,
-                               help='The command you want to run on the servers.')
-    runcmd_parser.add_argument('-p', '--host-prefix', required=False, action='store_const', const=True,
+                               help='The command you want to run on the servers. Use quotes if the command needs to run'
+                                    ' with flags by itself, like: runcmd cluster -c "uname -a"')
+    runcmd_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
                                help='Adds the host name at the beginning of each line. This helps to identify the '
                                     'content when piping into a grep or similar tasks.')
     runcmd_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
@@ -1250,7 +1321,7 @@ Excample: runcmd managers -c systemctl status mongod"""
         user.get_ssh_user()
         user.get_api_user()
         mgmt.get_management_server()
-        self.poutput(run_command(args.command, args.scope, args.host_prefix, args.parallel, args.servers))
+        self.poutput(run_command(args.command, args.scope, args.prefix, args.parallel, args.servers))
 
 
 def start_shell():
@@ -1269,7 +1340,7 @@ def start_shell():
         shell.cmdloop('''
 Copyright (c) 2018 Excelero, Inc. All rights reserved.
 
-This program comes with ABSOLUTELY NO WARRANTY; for licencing and warranty details type 'license'.
+This program comes with ABSOLUTELY NO WARRANTY; for licensing and warranty details type 'license'.
 This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
 
 Starting the NVMesh shell ...''')

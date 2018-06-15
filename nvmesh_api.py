@@ -155,10 +155,17 @@ class Api:
             return e.message
 
     def manage_volume(self, payload):
-        self.api_payload = {}
         self.api_payload = payload
         self.api_endpoint = '/volumes/save'
         self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
                                                                                self.api_port, self.api_endpoint),
                                                              json=self.api_payload)
+        return self.api_response.content
+
+    def set_control_jobs(self, payload):
+        self.api_payload = payload
+        self.api_endpoint = '/clients/setControlJobs'
+        self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
+                                                                    self.api_port, self.api_endpoint),
+                                                  json=self.api_payload)
         return self.api_response.content

@@ -28,6 +28,11 @@ RAID_LEVELS = {
     '10': 'Striped & Mirrored RAID-10'
 }
 
+CONTROL_JOBS = {
+    'attach': 'toBeAttached',
+    'detach': 'toBeDetached'
+}
+
 REGEX_HCAID = r"(mlx5_\d*)"
 REGEX_INSTALLED_MEMORY = r"\S*Mem:\s*(\d*[A-Za-z])"
 REGEX_HCA_MAX = r"LnkCap:\s\S*\s\S*\s\S*\s([A-Za-z0-9]*/s),\s\S*\s(\S[0-9]*)"
