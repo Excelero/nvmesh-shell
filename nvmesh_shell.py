@@ -479,37 +479,37 @@ def show_volumes(details, csv_format, json_format, volumes, short):
     get_api_ready()
     volumes_json = json.loads(nvmesh.get_volumes())
     volumes_list = []
-    remaining_dirty_bits = 0
     for volume in volumes_json:
+        remaining_dirty_bits = 0
         if volumes is not None and volume['name'] not in volumes:
             continue
-        target_list = []
-        target_disk_list = []
-        for chunk in volume['chunks']:
-            for praid in chunk['pRaids']:
-                for segment in praid['diskSegments']:
-                    if segment['type'] == 'raftonly':
-                        continue
-                    else:
-                        remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits']
-                        if short is True:
-                            target_list.append(segment['node_id'].split('.')[0])
+        else:
+            if 'stripeWidth' in volume:
+                stripe_width = volume['stripeWidth']
+            else:
+                stripe_width = "-"
+            target_list = []
+            target_disk_list = []
+            for chunk in volume['chunks']:
+                for praid in chunk['pRaids']:
+                    for segment in praid['diskSegments']:
+                        if segment['type'] == 'raftonly':
+                            continue
                         else:
-                            target_list.append(segment['node_id'])
-                        target_disk_list.append(segment['diskID'])
-        if 'stripeWidth' in volume:
-            stripe_width = volume['stripeWidth']
-        else:
-            stripe_width = '-'
-        if details is True:
-            volumes_list.append([volume['name'], volume['health'], volume['status'], volume['RAIDLevel'],
-                                 humanfriendly.format_size(volume['capacity'], binary=True), stripe_width,
-                                 humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
-                                 '; '.join(set(target_list)), '; '.join(set(target_disk_list))])
-        else:
-            volumes_list.append([volume['name'], volume['health'], volume['status'], volume['RAIDLevel'],
-                                 humanfriendly.format_size(volume['capacity'], binary=True), stripe_width,
-                                 humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True)])
+                            remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits']
+                            if short is True:
+                                target_list.append(segment['node_id'].split('.')[0])
+                            else:
+                                target_list.append(segment['node_id'])
+            if details is True:
+                volumes_list.append([volume['name'], volume['health'], volume['status'], volume['RAIDLevel'],
+                                     humanfriendly.format_size(volume['capacity'], binary=True), stripe_width,
+                                     humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
+                                     '; '.join(set(target_list)), '; '.join(set(target_disk_list))])
+            else:
+                volumes_list.append([volume['name'], volume['health'], volume['status'], volume['RAIDLevel'],
+                                     humanfriendly.format_size(volume['capacity'], binary=True), stripe_width,
+                                     humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True)])
     if details is True:
         if csv_format is True:
             return formatter.print_tsv(volumes_list)
@@ -913,7 +913,12 @@ def client_control_job(action, clients, volumes):
                     'control': CONTROL_JOBS[action]
                 }]
             }
-            print nvmesh.set_control_jobs(payload)
+            api_return = nvmesh.set_control_jobs(payload)
+            if api_return == 'null':
+                print(" ".join([action.title(), "volume %s on client %s:" % (volume, client), formatter.green("OK")]))
+            else:
+                print(" ".join([action.title(), "volume %s on client %s:" % (volume, client), formatter.red("Failed"),
+                                str(api_return)]))
 
 
 class NvmeshShell(Cmd):
@@ -999,7 +1004,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
     add_parser.add_argument('-d', '--drive-class', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific drive classes.')
     add_parser.add_argument('-w', '--stripe-width', nargs=1, required=False,
-                            help='Number of disks to use. Required for R0 and R1.')
+                            help='Number of disks to use. Required for R0 and R10.')
     add_parser.add_argument('-s', '--servers', nargs='+', required=False,
                             help='Specify a single server or a space separated list of servers.')
     add_parser.add_argument('-S', '--size', nargs=1, required=False,
