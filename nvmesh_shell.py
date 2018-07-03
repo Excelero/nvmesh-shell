@@ -40,25 +40,17 @@ from multiprocessing import Pool
 
 
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
-    # use defined argument order to display usage
     def _format_usage(self, usage, actions, groups, prefix):
         if prefix is None:
             prefix = 'usage: '
-
-        # if usage is specified, use that
         if usage is not None:
             usage = usage % dict(prog=self._prog)
-
-        # if no optionals or positionals are available, usage is just prog
         elif usage is None and not actions:
             usage = '%(prog)s' % dict(prog=self._prog)
         elif usage is None:
             prog = '%(prog)s' % dict(prog=self._prog)
-            # build full usage string
-            action_usage = self._format_actions_usage(actions, groups)  # NEW
+            action_usage = self._format_actions_usage(actions, groups)
             usage = ' '.join([s for s in [prog, action_usage] if s])
-            # omit the long line wrapping code
-        # prefix with 'usage:'
         return '%s%s\n\n' % (prefix, usage)
 
 
@@ -68,15 +60,15 @@ class OutputFormatter:
 
     @staticmethod
     def print_green(text):
-        print '\033[92m' + text + '\033[0m'
+        print('\033[92m' + text + '\033[0m')
 
     @staticmethod
     def print_yellow(text):
-        print '\033[33m' + text + '\033[0m'
+        print('\033[33m' + text + '\033[0m')
 
     @staticmethod
     def print_red(text):
-        print '\033[31m' + text + '\033[0m'
+        print('\033[31m' + text + '\033[0m')
 
     @staticmethod
     def green(text):
@@ -100,7 +92,7 @@ class OutputFormatter:
 
     @staticmethod
     def echo(host, text):
-        print "[ " + host.strip() + " ]\t.\t.\t." + text
+        print("[ " + host.strip() + " ]\t.\t.\t." + text)
         return
 
     @staticmethod
@@ -121,14 +113,6 @@ class OutputFormatter:
         return '\n'.join(text_lines)
 
 
-class Payload(dict):
-    def __str__(self):
-        return json.dumps(self)
-
-    def __repr__(self):
-        return json.dumps(self)
-
-
 class Hosts:
     def __init__(self):
         self.host_list = []
@@ -137,7 +121,7 @@ class Hosts:
         self.formatter = OutputFormatter()
         self.host_delete_list = []
 
-    def manage_hosts(self, action, hosts_list):
+    def manage_hosts(self, action, hosts_list, silent):
         if action == "add":
             open(self.host_file, 'a').write(('\n'.join(hosts_list) + '\n'))
         elif action == "get":
@@ -148,7 +132,10 @@ class Hosts:
                     output.append(host.strip())
                 return output
             else:
-                return [self.formatter.yellow(
+                if silent:
+                    return None
+                else:
+                    return [self.formatter.yellow(
                     "No hosts defined! Use 'add hosts' to add hosts to your shell environment.")]
         elif action == "delete":
             tmp_host_list = []
@@ -232,6 +219,7 @@ class UserCredentials:
             self.SSH_user_name = raw_input("Provide the root level SSH user name: ")
             self.SSH_password = getpass.getpass("Please provide the SSH password: ")
             self.save_ssh_user()
+            self.get_ssh_user()
             return self.SSH_user_name
         else:
             self.SSH_user_name = self.SSH_secrets[0]
@@ -248,6 +236,8 @@ class UserCredentials:
             self.API_user_name = raw_input("Provide the root level API user name: ")
             self.API_password = getpass.getpass("Please provide the API password: ")
             self.save_api_user()
+            self.get_api_user()
+            mgmt.get_management_server()
             return self.API_user_name
         else:
             self.API_user_name = self.API_secrets[0]
@@ -270,14 +260,23 @@ class SSHRemoteOperations:
         self.remote_command_return = None
         self.remote_command_error = None
 
-    def test_ssh_connection(self, host):
-        try:
-            self.ssh.connect(
-                host, username=user.SSH_user_name, password=user.SSH_password, timeout=5, port=self.ssh_port)
-            return formatter.green("Connection to host %s OK" % host)
-        except Exception, e:
-            print formatter.red("Connection to host %s Failed! " % host + e.message)
-        self.ssh.close()
+    def test_ssh_connection(self, host_list):
+        if host_list is None:
+            host_list = Hosts().manage_hosts('get', None, True)
+        if host_list is None:
+            host_list = get_client_list(False)
+            host_list.extend(get_target_list())
+            host_list.extend([mgmt.get_management_server()])
+            host_list = set(host_list)
+        for host in host_list:
+            try:
+                self.ssh.connect(
+                    host, username=user.SSH_user_name, password=user.SSH_password, timeout=5, port=self.ssh_port)
+                self.ssh.close()
+                print(" ".join(['Connection to %s' % host, formatter.green('OK')]))
+            except Exception, e:
+                print(" ".join(['Connection to %s' % host, formatter.red('Failed:'), e.message]))
+                self.ssh.close()
         return
 
     def transfer_files(self, host, list_of_files):
@@ -713,11 +712,11 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
 
 
 def manage_mcm(clients, action):
+    ssh = SSHRemoteOperations()
     if clients is not None:
         client_list = clients
     else:
         client_list = get_client_list()
-        ssh = SSHRemoteOperations()
     for client in client_list:
         if action == "stop":
             ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
@@ -785,7 +784,7 @@ def run_command(command, scope, prefix, parallel, server_list):
         if scope == 'managers':
             host_list = mgmt.get_management_server_list()
         if scope == 'hosts':
-            host_list = Hosts().manage_hosts('get', None)
+            host_list = Hosts().manage_hosts('get', None, False)
     host_list = set(host_list)
     command_return_list = []
     if parallel is True:
@@ -977,7 +976,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
         elif args.nvmesh_object == 'targetclasses':
             self.poutput(show_target_classes(args.tsv, args.json, args.classes))
         elif args.nvmesh_object == 'hosts':
-            self.poutput("\n".join(hosts.manage_hosts("get", None)))
+            self.poutput("\n".join(hosts.manage_hosts("get", None, False)))
 
     add_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],
@@ -1018,7 +1017,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
         """The 'add' sub-command will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment. E.g. 'add hosts' will add host entries to your nvmesh-shell environment while 'add volume' will create and add a new volume to the NVMesh cluster."""
         action = "add"
         if args.nvmesh_object == 'hosts':
-            hosts.manage_hosts(action, args.servers)
+            hosts.manage_hosts(action, args.servers, False)
         elif args.nvmesh_object == 'volume':
             if args.name is None:
                 print formatter.yellow(
@@ -1058,7 +1057,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
 runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh-shell environment and 'delete volume' will delete NVMesh volumes in your NVMesh cluster."""
         action = "delete"
         if args.nvmesh_object == 'hosts':
-            hosts.manage_hosts(action, args.server)
+            hosts.manage_hosts(action, args.server, False)
         elif args.nvmesh_object == 'volume':
             if args.volume[0] == 'all':
                 volume_list = get_volume_list()
@@ -1248,7 +1247,7 @@ E.g. 'restart managers' will restart the NVMesh management service."""
             self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
                                                args.parallel))
         elif args.nvmesh_object == 'mcm':
-            manage_mcm(args.server, action)
+            manage_mcm(args.servers, action)
         elif args.nvmesh_object == 'cluster':
             manage_cluster(args.details, action, args.prefix)
 
@@ -1302,8 +1301,10 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
                 mgmt.server = args.server[0]
 
     def do_license(self, args):
-        """Shows the licensing details, term and conditions. """
-        self.ppaged(open('LICENSE.txt', 'r').read())
+        """Shows the licensing details, terms and conditions. """
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        license_file_path = os.path.join(package_dir, 'LICENSE.txt')
+        self.ppaged(open(license_file_path, 'r').read())
 
     runcmd_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     runcmd_parser.add_argument('scope', choices=['clients', 'targets', 'managers', 'cluster', 'hosts'],
@@ -1328,6 +1329,18 @@ Excample: runcmd managers -c systemctl status mongod"""
         user.get_api_user()
         mgmt.get_management_server()
         self.poutput(run_command(args.command, args.scope, args.prefix, args.parallel, args.servers))
+
+    testssh_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    testssh_parser.add_argument('-s', '--server', nargs='+', required=False,
+                               help='Specify a server or a list of servers and/or hosts.')
+
+    @with_argparser(testssh_parser)
+    def do_testssh(self, args):
+        """Test the SSH connectivity to all, a list of, or individual servers and hosts.
+Excample: testssh -s servername"""
+        ssh = SSHRemoteOperations()
+        user.get_ssh_user()
+        ssh.test_ssh_connection(args.server)
 
 
 def start_shell():
