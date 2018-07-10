@@ -464,7 +464,8 @@ def show_clients(csv_format, json_format, server, short):
             else:
                 client_name = client['client_id']
             for volume in client['block_devices']:
-                volume_list.append(volume['name'])
+                if volume['vol_status'] == 4:
+                    volume_list.append(volume['name'])
             client_list.append([client_name, client['health'], client['version'], '; '.join(sorted(set(volume_list)))])
     if csv_format is True:
         return formatter.print_tsv(client_list)
