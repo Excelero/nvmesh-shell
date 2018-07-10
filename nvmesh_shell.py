@@ -409,7 +409,7 @@ def show_targets(details, csv_format, json_format, server, short):
             formatter.print_json(target_list)
             return
         else:
-            return format_smart_table(target_list, ['Target Name', 'Target Health', 'NVMesh Version', 'Target Disks',
+            return format_smart_table(sorted(target_list), ['Target Name', 'Target Health', 'NVMesh Version', 'Target Disks',
                                                     'Target NICs'])
     else:
         if csv_format is True:
@@ -417,7 +417,7 @@ def show_targets(details, csv_format, json_format, server, short):
         elif json_format is True:
             return formatter.print_json(target_list)
         else:
-            return format_smart_table(target_list, ['Target Name', 'Target Health', 'NVMesh Version'])
+            return format_smart_table(sorted(target_list), ['Target Name', 'Target Health', 'NVMesh Version'])
 
 
 def get_target_list():
@@ -465,13 +465,13 @@ def show_clients(csv_format, json_format, server, short):
                 client_name = client['client_id']
             for volume in client['block_devices']:
                 volume_list.append(volume['name'])
-            client_list.append([client_name, client['health'], client['version'], '; '.join(volume_list)])
+            client_list.append([client_name, client['health'], client['version'], '; '.join(sorted(set(volume_list)))])
     if csv_format is True:
         return formatter.print_tsv(client_list)
     elif json_format is True:
         return formatter.print_json(client_list)
     else:
-        return format_smart_table(client_list, ['Client Name', 'Client Health', 'Client Version', 'Client Volumes'])
+        return format_smart_table(sorted(client_list), ['Client Name', 'Client Health', 'Client Version', 'Client Volumes'])
 
 
 def show_volumes(details, csv_format, json_format, volumes, short):
@@ -516,7 +516,7 @@ def show_volumes(details, csv_format, json_format, volumes, short):
         elif json_format is True:
             return formatter.print_json(volumes_list)
         else:
-            return format_smart_table(volumes_list, ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
+            return format_smart_table(sorted(volumes_list), ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
                                                      'Volume Size', 'Stripe Width', 'Dirty Bits', 'Target Names',
                                                      'Target Disks'])
     else:
@@ -525,7 +525,7 @@ def show_volumes(details, csv_format, json_format, volumes, short):
         elif json_format is True:
             return formatter.print_json(volumes_list)
         else:
-            return format_smart_table(volumes_list, ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
+            return format_smart_table(sorted(volumes_list), ['Volume Name', 'Volume Health', 'Volume Status', 'Volume Type',
                                                      'Volume Size', 'Stripe Width', 'Dirty Bits'])
 
 
@@ -624,7 +624,7 @@ def count_active_targets():
     return active_targets
 
 
-def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
+def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, graceful):
     output = []
     ssh = SSHRemoteOperations()
     host_list = []
@@ -642,9 +642,22 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
             host_list = get_client_list(False)
         if scope == 'mgr':
             host_list = mgmt.get_management_server_list()
+    if scope == 'target' and action == 'stop' and graceful:
+        nvmesh.target_cluster_shutdown()
+        print("\n".join(["Shutting down the NVMesh target services in the cluster.", "Please wait..."]))
+        while count_active_targets() != 0:
+            time.sleep(5)
+        print(" ".join(["All target services shut down.", formatter.green("OK")]))
+        return
     if parallel is True:
         process_pool = Pool(len(set(host_list)))
         parallel_execution_map = []
+        if scope == 'target' and graceful:
+            nvmesh.target_cluster_shutdown()
+            print("\n".join(["Shutting down the NVMesh target services in the cluster.", "Please wait..."]))
+            while count_active_targets() != 0:
+                time.sleep(5)
+            print(" ".join(["All target services shut down.", formatter.green("OK")]))
         for host in set(host_list):
             if action == "check":
                 parallel_execution_map.append([host, "service nvmesh%s status" % scope])
@@ -653,7 +666,10 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel):
             elif action == "stop":
                 parallel_execution_map.append([host, "service nvmesh%s stop" % scope])
             elif action == "restart":
-                parallel_execution_map.append([host, "service nvmesh%s restart" % scope])
+                if scope is not 'target':
+                    parallel_execution_map.append([host, "service nvmesh%s restart" % scope])
+                else:
+                    parallel_execution_map.append([host, "service nvmesh%s start" % scope])
         command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
         process_pool.close()
         for command_return in command_return_list:
@@ -732,38 +748,38 @@ def manage_mcm(clients, action):
 def manage_cluster(details, action, prefix):
     if action == "check":
         print("Checking the NVMesh managers ...")
-        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True, None))
         print("Checking the NVMesh targets ...")
-        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True, None))
         print("Checking the NVMesh clients ...")
-        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True, None))
     elif action == "start":
         print ("Starting the NVMesh managers ...")
-        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True, None))
         time.sleep(3)
         print ("Starting the NVMesh targets ...")
-        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True, None))
         print ("Starting the NVMesh clients ...")
-        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True, None))
     elif action == "stop":
         print ("Stopping the NVMesh clients ...")
-        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, action, prefix, True, None))
         print ("Stopping the NVMesh targets ...")
-        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, action, prefix, True, True))
         print ("Stopping the NVMesh managers ...")
-        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, action, prefix, True, None))
     elif action == "restart":
         print ("Stopping the NVMesh clients ...")
-        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, 'stop', prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, 'stop', prefix, True, None))
         print ("Stopping the NVMesh targets ...")
-        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, 'stop', prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, 'stop', prefix, True, True))
         print ("Restarting the NVMesh managers ...")
-        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, 'restart', prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('mgr', details, None, 'restart', prefix, True, None))
         time.sleep(3)
         print ("Starting the NVMesh targets ...")
-        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, 'start', prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('target', details, None, 'start', prefix, True, None))
         print ("Starting the NVMesh clients ...")
-        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, 'start', prefix, True))
+        NvmeshShell().poutput(manage_nvmesh_service('client', details, None, 'start', prefix, True, None))
 
 
 def run_command(command, scope, prefix, parallel, server_list):
@@ -1127,13 +1143,13 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
         action = "check"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'clients':
             self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'managers':
             self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'cluster':
             manage_cluster(args.details, action, args.prefix)
 
@@ -1142,7 +1158,7 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
                              help='Specify the NVMesh service type you want to top.')
     stop_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                              help='List and view the service details.')
-    stop_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
+    stop_parser.add_argument('-g', '--graceful', nargs=1, required=False, default="True", choices=['True', 'False'],
                              help="Graceful stop of all NVMesh targets in the cluster."
                                   " The default is set to 'True'")
     stop_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
@@ -1164,13 +1180,13 @@ E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
         action = "stop"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, (False if args.graceful[0] == "False" else True)))
         elif args.nvmesh_object == 'clients':
             self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'managers':
             self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'cluster':
             manage_cluster(args.details, action, args.prefix)
         elif args.nvmesh_object == 'mcm':
@@ -1200,13 +1216,13 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
         action = "start"
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'clients':
             self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'managers':
             self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'cluster':
             manage_cluster(args.details, action, args.prefix)
         elif args.nvmesh_object == 'mcm':
@@ -1217,7 +1233,7 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
                                 help='Specify the NVMesh service which you want to restart.')
     restart_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
                                 help='List and view the service details.')
-    restart_parser.add_argument('-g', '--graceful', nargs=1, required=False, default=True, choices=['True', 'False'],
+    restart_parser.add_argument('-g', '--graceful', nargs=1, required=False, default="True", choices=['True', 'False'],
                                 help='Restart with a graceful stop of the targets in the cluster.'
                                      'The default is set to True')
     restart_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
@@ -1239,13 +1255,13 @@ E.g. 'restart managers' will restart the NVMesh management service."""
         action = 'restart'
         if args.nvmesh_object == 'targets':
             self.poutput(manage_nvmesh_service('target', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, (False if args.graceful[0] == "False" else True)))
         elif args.nvmesh_object == 'clients':
             self.poutput(manage_nvmesh_service('client', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'managers':
             self.poutput(manage_nvmesh_service('mgr', args.details, args.servers, action, args.prefix,
-                                               args.parallel))
+                                               args.parallel, False))
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.servers, action)
         elif args.nvmesh_object == 'cluster':
