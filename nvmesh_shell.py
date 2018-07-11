@@ -37,6 +37,7 @@ import nvmesh_api
 import time
 import urllib3
 from multiprocessing import Pool
+import dateutil.parser
 
 
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
@@ -591,6 +592,26 @@ def show_drive_classes(details, csv_format, json_format, classes):
         return format_smart_table(drive_class_list, ['Drive Class', 'Drive Models', 'Drive Details'])
 
 
+def show_logs(all_logs):
+    get_api_ready()
+    logs_list = []
+    logs_json = json.loads(nvmesh.get_logs(all_logs))
+    for log_entry in logs_json:
+        if log_entry["level"] == "ERROR":
+            logs_list.append(
+                "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])), formatter.red(log_entry["level"]),
+                           log_entry["message"]]))
+        elif log_entry["level"] == "WARNING":
+            logs_list.append(
+                "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])), formatter.yellow(log_entry["level"]),
+                           log_entry["message"]]))
+        else:
+            logs_list.append(
+                "\t".join(
+                    [str(dateutil.parser.parse(log_entry["timestamp"])), log_entry["level"], log_entry["message"]]))
+    return "\n".join(logs_list)
+
+
 def show_target_classes(csv_format, json_format, classes):
     get_api_ready()
     target_classes_json = json.loads(nvmesh.get_target_classes())
@@ -947,8 +968,10 @@ class NvmeshShell(Cmd):
     show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     show_parser.add_argument('nvmesh_object', choices=['cluster', 'targets', 'clients', 'volumes', 'manager',
                                                        'sshuser', 'apiuser', 'vpgs', 'driveclasses', 'targetclasses',
-                                                       'hosts'],
+                                                       'hosts', 'logs'],
                              help='Define/specify the scope or the NVMesh object you want to list or view.')
+    show_parser.add_argument('-a', '--all', required=False, action='store_const', const=True, default=False,
+                             help='Show all logs. Perdefault, only alerts are shown.')
     show_parser.add_argument('-c', '--classes', nargs='+', required=False,
                              help='A single or a space separated list of NVMesh drives or target classes.')
     show_parser.add_argument('-d', '--details', required=False, action='store_const', const=True,
@@ -994,6 +1017,8 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
             self.poutput(show_target_classes(args.tsv, args.json, args.classes))
         elif args.nvmesh_object == 'hosts':
             self.poutput("\n".join(hosts.manage_hosts("get", None, False)))
+        elif args.nvmesh_object == 'logs':
+            self.ppaged(show_logs(args.all))
 
     add_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     add_parser.add_argument('nvmesh_object', choices=['hosts', 'volume'],

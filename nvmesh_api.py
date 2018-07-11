@@ -22,8 +22,6 @@
 
 import requests
 import urllib3
-import humanfriendly
-import constants
 
 
 class Api:
@@ -105,9 +103,12 @@ class Api:
         except Exception, e:
             return e.message
 
-    def get_cluster_logs(self):
+    def get_logs(self, all_logs):
         try:
-            self.api_endpoint = '/logs/all'
+            if all_logs is True:
+                self.api_endpoint = '/logs/all/0/0?filter={}&sort={"timestamp":-1}'
+            else:
+                self.api_endpoint = '/logs/alerts/0/0?filter={}&sort={"timestamp":-1}'
             self.api_response = self.api_session.get("%s://%s:%s%s" % (self.api_protocol, self.api_server,
                                                                        self.api_port, self.api_endpoint))
             return self.api_response.content
