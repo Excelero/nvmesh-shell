@@ -1176,7 +1176,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
         elif args.nvmesh_object == 'log':
             self.ppaged(show_logs(args.all))
         elif args.nvmesh_object == 'drive':
-            self.poutput(show_drives(args.details, args.servers))
+            self.poutput(show_drives(args.detail, args.server))
         elif args.nvmesh_object == 'drivemodel':
             self.poutput(show_drive_models())
 
