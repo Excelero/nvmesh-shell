@@ -30,7 +30,7 @@ with open(path.join(here, 'README.md')) as f:
 
 setup(
     name='nvmesh-shell',
-    version='0.2.4',
+    version='0.3.0',
     author='Excelero, Inc. - Andreas Krause',
     url='https://github.com/Excelero/nvmesh-shell',
     description='Excelero NVMesh interactive shell and cli tool.',
@@ -51,7 +51,14 @@ setup(
         'GPLv3 License': 'https://www.gnu.org/licenses/gpl-3.0.en.html',
     },
     py_modules=['nvmesh-shell', 'constants', 'nvmesh_api', 'nvmesh_shell', ],
-    install_requires=['Cmd2', 'paramiko', 'humanfriendly', 'gnureadline', 'requests', 'urllib3', 'ipython', 'python-dateutil'],
+    install_requires=['Cmd2',
+                      'paramiko',
+                      'humanfriendly',
+                      'gnureadline',
+                      'requests',
+                      'urllib3',
+                      'ipython',
+                      'python-dateutil'],
 
     entry_points="""
         [console_scripts]

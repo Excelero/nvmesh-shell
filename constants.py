@@ -33,6 +33,13 @@ CONTROL_JOBS = {
     'detach': 'toBeDetached'
 }
 
+NVME_VENDORS = {
+    '0x1344': 'Micron',
+    '0x15b7': 'SanDisk',
+    '0x1179': 'Toshiba',
+    '0x144D': 'Samsung',
+}
+
 REGEX_HCAID = r"(mlx5_\d*)"
 REGEX_INSTALLED_MEMORY = r"\S*Mem:\s*(\d*[A-Za-z])"
 REGEX_HCA_MAX = r"LnkCap:\s\S*\s\S*\s\S*\s([A-Za-z0-9]*/s),\s\S*\s(\S[0-9]*)"
@@ -54,9 +61,9 @@ CMD_SET_ONE_QP = "mlxconfig -d %s -b /etc/opt/NVMesh/Excelero_mlxconfig.db set O
 CMD_GET_ONE_QP = "mlxconfig -d %s -b ./Excelero_mlxconfig.db query ONE_QP_PER_RECOVERY | grep ONE_QP_PER_RECOVERY"
 CMD_DISABLE_FIREWALL = ["systemctl stop firewalld", "systemctl disable firewalld"]
 CMD_SET_FIREWALL_FOR_NVMESH_MGMT = ["firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport "
-                                    "4000 -j ACCEPT -m comment --comment Excelero-Management", "firewall-cmd "
-                                                                                               "--permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport 4001 -j "
-                                                                                               "ACCEPT -m comment --comment Excelero-Management"]
+                                    "4000 -j ACCEPT -m comment --comment Excelero-Management",
+                                    "firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp "
+                                    "--dport 4001 -j ACCEPT -m comment --comment Excelero-Management"]
 CMD_SET_FIREWALL_FOR_ROCEV2 = "firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p udp --dport " \
                               "4791 -j ACCEPT -m comment --comment RoCEv2-Target"
 CMD_SET_FIREWALL_FOR_MOGODB = "firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 -p tcp --dport 27017 " \
@@ -112,25 +119,25 @@ CMD_GET_IBHOSTS = "ibhosts"
 CMD_GET_IBSWITCHES = "ibswitches"
 CMD_GET_IP_INFO = "ip -4 a s"
 CMD_GET_NVMESH_SERVICES = "service --status-all | grep nvmesh"
-CMD_GET_NVMESH_SERVICE_DETAILS = "service %s status"
+CMD_GET_NVMESH_SERVICE_DETAILS = "/etc/init.d/nvmeshtarget %s status"
 CMD_STOP_NVMESH_SERVICES = "service %s stop"
 CMD_CHECK_IF_SERVICE_IS_RUNNING = "systemctl status %s"
 CMD_START_TUNED = "systemctl start tuned"
 CMD_ENABLE_TUNED = "systemctl enable tuned"
 CMD_INSTALL_SLES_PACKAGE = "zypper install -y %s"
 CMD_INSTALL_RHEL_PACKAGE = "yum install -y %s"
-CMD_STATUS_NVMESH_TARGET = "service nvmeshtarget status"
-CMD_STOP_NVMESH_TARGET = "service nvmeshtarget stop"
-CMD_START_NVMESH_TARGET = "service nvmeshtarget start"
-CMD_STATUS_NVMESH_CLIENT = "service nvmeshclient status"
-CMD_STOP_NVMESH_CLIENT = "service nvmeshclient stop"
-CMD_START_NVMESH_CLIENT = "service nvmeshclient start"
-CMD_STATUS_NVMESH_MANAGER = "service nvmeshmgr status"
-CMD_STOP_NVMESH_MANAGER = "service nvmeshmgr stop"
-CMD_START_NVMESH_MANAGER = "service nvmeshmgr start"
-CMD_RESTART_NVMESH_MANAGER = "service nvmeshmgr restart"
-CMD_RESTART_NVMESH_CLIENT = "service nvmeshclient restart"
-CMD_RESTART_NVMESH_TARGET = "service nvmeshtarget restart"
+CMD_STATUS_NVMESH_TARGET = "/etc/init.d/nvmeshtarget status"
+CMD_STOP_NVMESH_TARGET = "/etc/init.d/nvmeshtarget stop"
+CMD_START_NVMESH_TARGET = "/etc/init.d/nvmeshtarget start"
+CMD_STATUS_NVMESH_CLIENT = "/etc/init.d/nvmeshtarget status"
+CMD_STOP_NVMESH_CLIENT = "/etc/init.d/nvmeshtarget stop"
+CMD_START_NVMESH_CLIENT = "/etc/init.d/nvmeshtarget start"
+CMD_STATUS_NVMESH_MANAGER = "/etc/init.d/nvmeshtarget status"
+CMD_STOP_NVMESH_MANAGER = "/etc/init.d/nvmeshtarget stop"
+CMD_START_NVMESH_MANAGER = "/etc/init.d/nvmeshtarget start"
+CMD_RESTART_NVMESH_MANAGER = "/etc/init.d/nvmeshtarget restart"
+CMD_RESTART_NVMESH_CLIENT = "/etc/init.d/nvmeshtarget restart"
+CMD_RESTART_NVMESH_TARGET = "/etc/init.d/nvmeshtarget restart"
 CMD_STOP_NVMESH_MCM = "/opt/NVMesh/client-repo/management_cm/managementCM.py stop"
 CMD_START_NVMESH_MCM = "/opt/NVMesh/client-repo/management_cm/managementCM.py start"
 CMD_RESTART_NVMESH_MCM = "/opt/NVMesh/client-repo/management_cm/managementCM.py restart"

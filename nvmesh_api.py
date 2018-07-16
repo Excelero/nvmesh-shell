@@ -42,8 +42,8 @@ class Api:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.api_endpoint = '/login'
         self.api_payload = {
-            "username" : self.api_user_name,
-            "password" : self.api_password
+            "username": self.api_user_name,
+            "password": self.api_password
         }
         self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
                                                                     self.api_port, self.api_endpoint),
@@ -133,9 +133,36 @@ class Api:
         except Exception, e:
             return e.message
 
+    def get_disk_models(self):
+        try:
+            self.api_endpoint = '/disks/models'
+            self.api_response = self.api_session.get("%s://%s:%s%s" % (self.api_protocol, self.api_server,
+                                                                       self.api_port, self.api_endpoint))
+            return self.api_response.content
+        except Exception, e:
+            return e.message
+
+    def get_disk_by_model(self, model):
+        try:
+            self.api_endpoint = '/disks/disksByModel/%s' % model
+            self.api_response = self.api_session.get("%s://%s:%s%s" % (self.api_protocol, self.api_server,
+                                                                       self.api_port, self.api_endpoint))
+            return self.api_response.content
+        except Exception, e:
+            return e.message
+
     def get_target_classes(self):
         try:
             self.api_endpoint = '/serverClasses/all'
+            self.api_response = self.api_session.get("%s://%s:%s%s" % (self.api_protocol, self.api_server,
+                                                                       self.api_port, self.api_endpoint))
+            return self.api_response.content
+        except Exception, e:
+            return e.message
+
+    def get_server_by_id(self, server):
+        try:
+            self.api_endpoint = '/servers/api/%s' % server
             self.api_response = self.api_session.get("%s://%s:%s%s" % (self.api_protocol, self.api_server,
                                                                        self.api_port, self.api_endpoint))
             return self.api_response.content
@@ -149,7 +176,7 @@ class Api:
                 "control": "shutdownAll"
             }
             self.api_response = self.api_session.post("%s://%s:%s%s" % (self.api_protocol, self.api_server,
-                                                                    self.api_port, self.api_endpoint),
+                                                                        self.api_port, self.api_endpoint),
                                                       json=self.api_payload)
             return self.api_response.content
         except Exception, e:
@@ -159,13 +186,29 @@ class Api:
         self.api_payload = payload
         self.api_endpoint = '/volumes/save'
         self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
-                                                                               self.api_port, self.api_endpoint),
-                                                             json=self.api_payload)
+                                                                    self.api_port, self.api_endpoint),
+                                                  json=self.api_payload)
         return self.api_response.content
 
     def set_control_jobs(self, payload):
         self.api_payload = payload
         self.api_endpoint = '/clients/setControlJobs'
+        self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
+                                                                    self.api_port, self.api_endpoint),
+                                                  json=self.api_payload)
+        return self.api_response.content
+
+    def manage_drive_class(self, action, payload):
+        self.api_payload = payload
+        self.api_endpoint = '/diskClasses/%s' % action
+        self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
+                                                                    self.api_port, self.api_endpoint),
+                                                  json=self.api_payload)
+        return self.api_response.content
+
+    def manage_target_class(self, action, payload):
+        self.api_payload = payload
+        self.api_endpoint = '/serverClasses/%s' % action
         self.api_response = self.api_session.post('%s://%s:%s%s' % (self.api_protocol, self.api_server,
                                                                     self.api_port, self.api_endpoint),
                                                   json=self.api_payload)
