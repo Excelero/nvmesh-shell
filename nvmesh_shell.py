@@ -521,7 +521,8 @@ def show_volumes(details, csv_format, json_format, volumes, short):
                         if segment['type'] == 'raftonly':
                             continue
                         else:
-                            remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits'] if segment['remainingDirtyBits'] else 0
+                            remaining_dirty_bits = remaining_dirty_bits + (segment['remainingDirtyBits']
+                                                                           if 'remainingDirtyBits' in segment else 0)
                             target_disk_list.append(segment['diskID'])
                             if short is True:
                                 target_list.append(segment['node_id'].split('.')[0])
@@ -630,11 +631,12 @@ def show_logs(all_logs):
         elif log_entry["level"] == "WARNING":
             logs_list.append(
                 "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])), formatter.yellow(log_entry["level"]),
-                           log_entry["message"]]))
+                           log_entry["message"]]).strip())
         else:
             logs_list.append(
                 "\t".join(
-                    [str(dateutil.parser.parse(log_entry["timestamp"])), log_entry["level"], log_entry["message"]]))
+                    [str(dateutil.parser.parse(log_entry["timestamp"])), log_entry["level"],
+                     log_entry["message"]]).strip())
     return "\n".join(logs_list)
 
 
