@@ -500,7 +500,7 @@ def show_clients(csv_format, json_format, server, short):
                                   ['Client Name', 'Client Health', 'Client Version', 'Client Volumes'])
 
 
-def show_volumes(details, csv_format, json_format, volumes, short):
+def show_volumes(details, csv_format, json_format, volumes, short, layout):
     get_api_ready()
     volumes_json = json.loads(nvmesh.get_volumes())
     volumes_list = []
@@ -518,15 +518,41 @@ def show_volumes(details, csv_format, json_format, volumes, short):
             else:
                 awareness_domain = None
             if 'serverClasses' in volume:
-                target_classes_list = volume['serverClasses']
+                if len(volume['serverClasses']) > 0:
+                    target_classes_list = volume['serverClasses']
+                else:
+                    target_classes_list = None
             else:
                 target_classes_list = None
+
             if 'diskClasses' in volume:
-                drive_classes_list = volume['diskClasses']
+                if len(volume['diskClasses']) > 0:
+                    drive_classes_list = volume['diskClasses']
+                else:
+                    drive_classes_list = None
             else:
                 drive_classes_list = None
+
             target_list = []
             target_disk_list = []
+            chunk_count = 0
+            volume_layout_list = []
+
+            if layout:
+                for chunk in volume['chunks']:
+                    for praid in chunk['pRaids']:
+                        for segment in praid['diskSegments']:
+                            volume_layout_list.append([str(chunk_count),
+                                                       str(praid['stripeIndex']),
+                                                       str(segment['pRaidIndex']),
+                                                       segment['type'],
+                                                       str(segment['lbs']) if segment['lbs'] != 0 else "n/a",
+                                                       str(segment['lbe']) if segment['lbe'] != 0 else "n/a",
+                                                       segment['status'],
+                                                       segment['diskID'],
+                                                       segment['node_id']])
+                    chunk_count += 1
+
             for chunk in volume['chunks']:
                 for praid in chunk['pRaids']:
                     for segment in praid['diskSegments']:
@@ -540,12 +566,14 @@ def show_volumes(details, csv_format, json_format, volumes, short):
                                 target_list.append(segment['node_id'].split('.')[0])
                             else:
                                 target_list.append(segment['node_id'])
-            if details is True:
+
+            if details is True and not layout:
                 volumes_list.append([volume['name'],
                                      volume['health'],
                                      volume['status'],
                                      volume['RAIDLevel'],
-                                     humanfriendly.format_size(volume['capacity'], binary=True),
+                                     humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
+                                                               binary=True),
                                      stripe_width if stripe_width is not None else "n/a",
                                      humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
                                      ' '.join(set(target_list)),
@@ -553,15 +581,40 @@ def show_volumes(details, csv_format, json_format, volumes, short):
                                      ' '.join(target_classes_list) if target_classes_list is not None else "n/a",
                                      ' '.join(drive_classes_list) if drive_classes_list is not None else "n/a",
                                      awareness_domain if awareness_domain is not None else "n/a"])
+
+            elif details is True and layout:
+                volumes_list.append([volume['name'],
+                                     volume['health'],
+                                     volume['status'],
+                                     volume['RAIDLevel'],
+                                     humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
+                                                               binary=True),
+                                     stripe_width if stripe_width is not None else "n/a",
+                                     humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
+                                     ' '.join(set(target_list)),
+                                     ' '.join(set(target_disk_list)),
+                                     ' '.join(target_classes_list) if target_classes_list is not None else "n/a",
+                                     ' '.join(drive_classes_list) if drive_classes_list is not None else "n/a",
+                                     awareness_domain if awareness_domain is not None else "n/a",
+                                     format_smart_table(volume_layout_list, ["Chunk",
+                                                                             "Stripe",
+                                                                             "Segment",
+                                                                             "Type",
+                                                                             "LBA Start",
+                                                                             "LBA End",
+                                                                             "Status",
+                                                                             "Disk ID",
+                                                                             "Last Known Target"])])
             else:
                 volumes_list.append([volume['name'],
                                      volume['health'],
                                      volume['status'],
                                      volume['RAIDLevel'],
-                                     humanfriendly.format_size(volume['capacity'], binary=True),
+                                     humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
+                                                               binary=True),
                                      stripe_width if stripe_width is not None else "n/a",
                                      humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True)])
-    if details is True:
+    if details is True and not layout:
         if csv_format is True:
             return formatter.print_tsv(volumes_list)
         elif json_format is True:
@@ -580,6 +633,26 @@ def show_volumes(details, csv_format, json_format, volumes, short):
                                        'Target Classes',
                                        'Drive Classes',
                                        'Awarness/Domain'])
+    elif details is True and layout:
+        if csv_format is True:
+            return formatter.print_tsv(volumes_list)
+        elif json_format is True:
+            return formatter.print_json(volumes_list)
+        else:
+            return format_smart_table(sorted(volumes_list),
+                                      ['Volume Name',
+                                       'Volume Health',
+                                       'Volume Status',
+                                       'Volume Type',
+                                       'Volume Size',
+                                       'Stripe Width',
+                                       'Dirty Bits',
+                                       'Target Names',
+                                       'Target Disks',
+                                       'Target Classes',
+                                       'Drive Classes',
+                                       'Awarness/Domain',
+                                       'Volume Layout'])
     else:
         if csv_format is True:
             return formatter.print_tsv(volumes_list)
@@ -1266,6 +1339,8 @@ class NvmeshShell(Cmd):
                              help='A single or a space separated list of NVMesh drives or target classes.')
     show_parser.add_argument('-d', '--detail', required=False, action='store_const', const=True,
                              help='Show more details.')
+    show_parser.add_argument('-l', '--layout', required=False, action='store_const', const=True,
+                             help='Show the volume layout details. To be used together with the "-d" switch.')
     show_parser.add_argument('-j', '--json', required=False, action='store_const', const=True,
                              help='Format output as JSON.')
     show_parser.add_argument('-s', '--server', nargs='+', required=False,
@@ -1282,7 +1357,9 @@ class NvmeshShell(Cmd):
     @with_argparser(show_parser)
     def do_show(self, args):
         """List and view specific Nvmesh objects and its properties.
-The 'list sub-command allows output in a table, tabulator separated value or JSON format. E.g 'list targets' will list all targets. In case you want to see the properties of only one or just a few you need to use the '-s' or '--server' option to specify single or a list of servers/targets. E.g. 'list targets -s target1 target2'"""
+The 'list sub-command allows output in a table, tabulator separated value or JSON format. E.g 'list targets' will list
+all targets. In case you want to see the properties of only one or just a few you need to use the '-s' or '--server'
+option to specify single or a list of servers/targets. E.g. 'list targets -s target1 target2'"""
         mgmt.get_management_server()
         user.get_api_user()
         if args.nvmesh_object == 'target':
@@ -1290,7 +1367,7 @@ The 'list sub-command allows output in a table, tabulator separated value or JSO
         elif args.nvmesh_object == 'client':
             self.poutput(show_clients(args.tsv, args.json, args.server, args.short_name))
         elif args.nvmesh_object == 'volume':
-            self.poutput(show_volumes(args.detail, args.tsv, args.json, args.volume, args.short_name))
+            self.poutput(show_volumes(args.detail, args.tsv, args.json, args.volume, args.short_name, args.layout))
         elif args.nvmesh_object == 'sshuser':
             self.poutput(user.get_ssh_user())
         elif args.nvmesh_object == 'apiuser':
