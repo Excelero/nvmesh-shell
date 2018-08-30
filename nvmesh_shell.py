@@ -347,10 +347,10 @@ hosts = Hosts()
 def get_api_ready():
     mgmt.server = mgmt.get_management_server()
     user.get_api_user()
-    nvmesh.api_user_name = user.API_user_name
-    nvmesh.api_password = user.API_password
+    nvmesh.user_name = user.API_user_name
+    nvmesh.password = user.API_password
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    nvmesh.api_server = mgmt.server
+    nvmesh.server = mgmt.server
     nvmesh.login()
     return
 
@@ -1171,7 +1171,8 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
             payload["domains"] = parse_domain_args(domains)
         if file is not None:
             payload["disks"] = [{"model": model[0],
-                                 "disks": parse_drive_args(open(file_path[0], 'r').readlines())}]
+                                 "disks": parse_drive_args(open(file_path[0], 'r').readlines())
+                                 if file_path is not None else parse_drive_args(drives)}]
         else:
             payload["disks"] = [{"model": model[0],
                                  "disks": parse_drive_args(drives)}]
