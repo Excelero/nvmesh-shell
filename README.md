@@ -2,14 +2,21 @@
 
 To install nvmesh-shell perform the following steps:
 
-`sudo yum install python-pip`
+Step 1:
+Make sure that pip is installed and works properly.
+Please find more information on this subject here: [https://pip.pypa.io/en/stable/installing/]
 
+Step 2:
 Clone the git repository:
 `git clone https://github.com/Excelero/nvmesh-shell`
 
+Step 3:
+Change into the nvmesh-shell source directory:
 `cd nvmesh-shell`
 
-`pip install --upgrade pip`
+Step 4:
+Install the nvmesh-shell package:
+`pip install .`
 
 
 **Usage**
