@@ -20,6 +20,7 @@
 # Maintainer:    Andreas Krause
 # Email:         andreas@excelero.com
 
+import logger
 from cmd2 import Cmd, with_argparser
 import argparse
 import json
@@ -39,6 +40,8 @@ import urllib3
 from multiprocessing import Pool
 import dateutil.parser
 import re
+
+version = '0.3.7'
 
 
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
@@ -110,8 +113,11 @@ class OutputFormatter:
         return json.dumps(content, indent=2)
 
     @staticmethod
-    def add_line_prefix(prefix, text):
-        text_lines = [' '.join([prefix.split('.')[0], line]) for line in text.splitlines()]
+    def add_line_prefix(prefix, text, short):
+        if short:
+            text_lines = [' '.join([prefix.split('.')[0], line]) for line in text.splitlines()]
+        else:
+            text_lines = [' '.join([prefix, line]) for line in text.splitlines()]
         return '\n'.join(text_lines)
 
 
@@ -226,7 +232,7 @@ class UserCredentials:
         else:
             self.SSH_user_name = self.SSH_secrets[0]
             self.SSH_password = base64.b64decode(self.SSH_secrets[1])
-            return self.SSH_user_name
+            return self.SSH_user_name, self.SSH_password
 
     def get_api_user(self):
         try:
@@ -261,6 +267,8 @@ class SSHRemoteOperations:
         self.remote_stdout = None
         self.remote_command_return = None
         self.remote_command_error = None
+        self.ssh_user_name = user.get_ssh_user()[0]
+        self.ssh_password = user.get_ssh_user()[1]
 
     def test_ssh_connection(self, host_list):
         if host_list is None:
@@ -300,7 +308,7 @@ class SSHRemoteOperations:
 
     def return_remote_command_std_output(self, host, remote_command):
         try:
-            self.ssh.connect(host, username=user.SSH_user_name, password=user.SSH_password, timeout=5,
+            self.ssh.connect(host, username=self.ssh_user_name, password=self.ssh_password, timeout=5,
                              port=self.ssh_port)
             stdin, stdout, stderr = self.ssh.exec_command(remote_command)
             self.remote_command_return = stdout.channel.recv_exit_status(), stdout.read().strip(), stderr.read().strip()
@@ -313,7 +321,8 @@ class SSHRemoteOperations:
             else:
                 return self.remote_command_return[0], " ".join([remote_command, self.remote_command_return[1]])
         except Exception, e:
-            print formatter.print_red("Couldn't execute command %s on %s !" % (remote_command, host) + e.message)
+            logger.log("critical", e)
+            print formatter.print_red("Couldn't execute command %s on %s! %s" % (remote_command, host, e.message))
 
     def execute_remote_command(self, host, remote_command):
         try:
@@ -322,7 +331,9 @@ class SSHRemoteOperations:
             stdin, stdout, stderr = self.ssh.exec_command(remote_command)
             return stdout.channel.recv_exit_status(), "Success - OK"
         except Exception, e:
-            print formatter.print_red("Couldn't execute command %s on %s !" % (remote_command, host) + e.message)
+            logger.log("critical", e)
+            print formatter.print_red("Couldn't execute command %s on %s!" % (remote_command, host))
+            return
 
     def check_if_service_is_running(self, host, service):
         try:
@@ -824,6 +835,8 @@ def parse_domain_args(args_list):
 
 
 def parse_drive_args(args_drive_list):
+    if args_drive_list is None:
+        return None
     drive_list = []
     for drive in args_drive_list:
         drive_list.append(
@@ -865,7 +878,7 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
     if parallel is True:
         process_pool = Pool(len(set(host_list)))
         parallel_execution_map = []
-        if scope == 'target' and graceful and specific_servers is False:
+        if scope == 'target' and action == 'stop' and graceful and specific_servers is False:
             nvmesh.target_cluster_shutdown()
             print("\n".join(["Shutting down the NVMesh target services in the cluster.", "Please wait..."]))
             while count_active_targets() != 0:
@@ -887,28 +900,32 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
         command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
         process_pool.close()
         for command_return in command_return_list:
-            if command_return[1][0] == 0:
-                if details is True:
-                    output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
-                                                           formatter.green('OK')])))
-                    if prefix is True:
-                        output.append(formatter.add_line_prefix(command_return[0], (
-                            command_return[1][1][:command_return[1][1].rfind('\n')])) + "\n")
+            try:
+                if command_return[1][0] == 0:
+                    if details is True:
+                        output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
+                                                               formatter.green('OK')])))
+                        if prefix is True:
+                            output.append(formatter.add_line_prefix(command_return[0], (
+                                command_return[1][1][:command_return[1][1].rfind('\n')]), True) + "\n")
+                        else:
+                            output.append((command_return[1][1][:command_return[1][1].rfind('\n')] + "\n"))
                     else:
-                        output.append((command_return[1][1][:command_return[1][1].rfind('\n')] + "\n"))
+                        output.append(" ".join([command_return[0], action.capitalize(), formatter.green('OK')]))
                 else:
-                    output.append(" ".join([command_return[0], action.capitalize(), formatter.green('OK')]))
-            else:
-                if details is True:
-                    output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
-                                                           formatter.red('Failed')])))
-                    if prefix is True:
-                        output.append(formatter.add_line_prefix(command_return[0], (
-                            command_return[1][1]) + "\n"))
+                    if details is True:
+                        output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
+                                                               formatter.red('Failed')])))
+                        if prefix is True:
+                            output.append(formatter.add_line_prefix(command_return[0], (
+                                command_return[1][1]) + "\n", True))
+                        else:
+                            output.append(command_return[1][1] + "\n")
                     else:
-                        output.append(command_return[1][1] + "\n")
-                else:
-                    output.append(" ".join([command_return[0], action.capitalize(), formatter.red('Failed')]))
+                        output.append(" ".join([command_return[0], action.capitalize(), formatter.red('Failed')]))
+            except Exception, e:
+                logger.log("critical", e)
+                return "Error"
         return "\n".join(output)
     else:
         for server in host_list:
@@ -924,7 +941,7 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
                 if details is True:
                     output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.green('OK')]))
                     if prefix is True:
-                        output.append(formatter.add_line_prefix(server, (ssh_return[1])))
+                        output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
                     else:
                         output.append((ssh_return[1] + "\n"))
                 else:
@@ -933,7 +950,7 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
                 if details is True:
                     output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.red('Failed')]))
                     if prefix is True:
-                        output.append(formatter.add_line_prefix(server, (ssh_return[1])))
+                        output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
                     else:
                         output.append((ssh_return[1] + "\n"))
                 else:
@@ -1033,7 +1050,7 @@ def run_command(command, scope, prefix, parallel, server_list):
             output_line = formatter.red(" ".join(["Return Code %s," % (
                 command_return[1][0]), command_return[1][1]]))
             if prefix is True:
-                output.append(formatter.add_line_prefix(command_return[0], output_line))
+                output.append(formatter.add_line_prefix(command_return[0], output_line, True))
             else:
                 output.append(output_line)
         else:
@@ -1042,7 +1059,7 @@ def run_command(command, scope, prefix, parallel, server_list):
             else:
                 output_line = command_return[1][1]
             if prefix is True:
-                output.append(formatter.add_line_prefix(command_return[0], output_line))
+                output.append(formatter.add_line_prefix(command_return[0], output_line, True))
             else:
                 output.append(output_line)
     return "\n".join(output)
@@ -1050,12 +1067,42 @@ def run_command(command, scope, prefix, parallel, server_list):
 
 def run_parallel_ssh_command(argument):
     ssh = SSHRemoteOperations()
-    output = ssh.return_remote_command_std_output(argument[0], argument[1])
-    return argument[0], output
+    try:
+        output = ssh.return_remote_command_std_output(argument[0], argument[1])
+        return argument[0], output
+    except Exception, e:
+        print e.message
+        logger.log('critical', e)
+
+
+def attach_detach_volumes(action, clients, volumes):
+    try:
+        process_pool = Pool(len(clients))
+        parallel_execution_map = []
+        command_return_list = []
+        if action == 'attach':
+            for client in clients:
+                command_line = " ".join(['nvmesh_attach_volumes', " ".join(volumes)])
+                parallel_execution_map.append([str(client), str(command_line)])
+            command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
+            process_pool.close()
+        elif action == 'detach':
+            for client in clients:
+                command_line = " ".join(['nvmesh_detach_volumes', " ".join(volumes)])
+                parallel_execution_map.append([str(client), str(command_line)])
+            command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
+            process_pool.close()
+        output = []
+        for command_return in command_return_list:
+            output.append(formatter.add_line_prefix(command_return[0], command_return[1][1], False))
+        return "\n".join(output)
+    except Exception, e:
+        print e.message
+        logger.log('critical', e)
 
 
 def manage_volume(action, name, capacity, description, disk_classes, server_classes, limit_by_nodes, limit_by_disks,
-                  awareness, raid_level, stripe_width, number_of_mirrors, vpg):
+                  awareness, raid_level, stripe_width, number_of_mirrors, vpg, force):
     get_api_ready()
     api_payload = {}
     payload = {}
@@ -1119,6 +1166,8 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
         output = []
         for volume in name:
             payload["_id"] = volume
+            if force:
+                payload["force"] = True
             api_payload["remove"] = [payload]
             api_payload["create"] = []
             api_payload["edit"] = []
@@ -1169,7 +1218,7 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
             payload["description"] = description
         if domains is not None:
             payload["domains"] = parse_domain_args(domains)
-        if file is not None:
+        if file_path is not None:
             payload["disks"] = [{"model": model[0],
                                  "disks": parse_drive_args(open(file_path[0], 'r').readlines())
                                  if file_path is not None else parse_drive_args(drives)}]
@@ -1332,7 +1381,7 @@ class NvmeshShell(Cmd):
     show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     show_parser.add_argument('nvmesh_object', choices=['cluster', 'target', 'client', 'volume', 'drive', 'manager',
                                                        'sshuser', 'apiuser', 'vpg', 'driveclass', 'targetclass',
-                                                       'host', 'log', 'drivemodel'],
+                                                       'host', 'log', 'drivemodel', 'version'],
                              help='Define/specify the scope or the NVMesh object you want to list or view.')
     show_parser.add_argument('-a', '--all', required=False, action='store_const', const=True, default=False,
                              help='Show all logs. Per default only alerts are shown.')
@@ -1391,6 +1440,8 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
             self.poutput(show_drives(args.detail, args.server))
         elif args.nvmesh_object == 'drivemodel':
             self.poutput(show_drive_models(args.detail))
+        elif args.nvmesh_object == 'version':
+            self.poutput(version)
 
     add_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     add_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'driveclass', 'targetclass'],
@@ -1410,14 +1461,16 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                             help='Optional - Limit volume allocation to specific drives.')
     add_parser.add_argument('-L', '--limit-by-target', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific target nodes.')
-    add_parser.add_argument('-m', '--drive', nargs='+', required=False,
+    group = add_parser.add_mutually_exclusive_group()
+    group.add_argument('-m', '--drive', nargs='+', required=False,
                             help='Drive/media information. Needs to include the drive ID/serial and the target'
                                  'node/server name in the format driveId:targetName'
                                  'Example: -m "Example: 174019659DA4.1:test.lab"')
-    add_parser.add_argument('-f', '--file', nargs=1, required=False,
+    group.add_argument('-f', '--file', nargs=1, required=False,
                             help='Path to the file containing the driveId:targetName information. '
                                  'Needs to'
-                                 'Example: -f /path/to/file"')
+                                 'Example: -f "/path/to/file". This argument is not allowed together with the -m '
+                                 'argument')
     add_parser.add_argument('-M', '--model', nargs=1, required=False,
                             help='Drive model information for the new drive class. '
                                  'Note: Must be the exactly the same model designator as when running the'
@@ -1501,11 +1554,11 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                                                    args.target_class, args.limit_by_target, args.limit_by_disk,
                                                    args.domain,
                                                    args.raid_level, args.stripe_width, args.number_of_mirrors,
-                                                   args.vpg))
+                                                   args.vpg, None))
             else:
                 self.poutput(manage_volume('create', args.name[0], args.size, args.description, args.drive_class,
                                            args.target_class, args.limit_by_target, args.limit_by_disk, args.domain,
-                                           args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg))
+                                           args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg, None))
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'driveclass', 'targetclass'],
@@ -1518,6 +1571,8 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                                help='Specify a single drive class or a space separated list of drive classes.')
     delete_parser.add_argument('-v', '--volume', nargs='+',
                                help='Specify a single volume or a space separated list of volumes.')
+    delete_parser.add_argument('-f', '--force', required=False, action='store_const', const=True, default=False,
+                               help='Use this flag to forcefully delete the volume/s.')
 
     @with_argparser(delete_parser)
     def do_delete(self, args):
@@ -1550,10 +1605,10 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
             if args.volume[0] == 'all':
                 volume_list = get_volume_list()
                 self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None, None,
-                                           None, None))
+                                           None, None, args.force))
             else:
                 self.poutput(manage_volume('remove', args.volume, None, None, None, None, None, None, None, None, None,
-                                           None, None))
+                                           None, None, args.force))
 
     attach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     attach_parser.add_argument('-c', '--client', nargs='+', required=True,
@@ -1572,7 +1627,7 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
             volume_list = get_volume_list()
         else:
             volume_list = args.volume
-        self.poutput(client_control_job('attach', client_list, volume_list))
+        self.poutput(attach_detach_volumes('attach', client_list, volume_list))
 
     detach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     detach_parser.add_argument('-c', '--client', nargs='+', required=True,
@@ -1591,7 +1646,7 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
             volume_list = get_volume_list()
         else:
             volume_list = args.volume
-        self.poutput(client_control_job('detach', client_list, volume_list))
+        self.poutput(attach_detach_volumes('detach', client_list, volume_list))
 
     check_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     check_parser.add_argument('nvmesh_object', choices=['client', 'target', 'manager', 'cluster'],
@@ -1850,7 +1905,7 @@ Copyright (c) 2018 Excelero, Inc. All rights reserved.
 This program comes with ABSOLUTELY NO WARRANTY; for licensing and warranty details type 'license'.
 This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
 
-Starting the NVMesh shell ...''')
+Starting the NVMesh shell version %s ...''' % version)
 
 
 if __name__ == '__main__':
