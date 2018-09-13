@@ -22,7 +22,6 @@
 
 from setuptools import setup, find_packages
 from os import path
-from nvmesh_shell import version
 
 here = path.abspath(path.dirname(__file__))
 
@@ -31,7 +30,7 @@ with open(path.join(here, 'README.md')) as f:
 
 setup(
     name='nvmesh-shell',
-    version=version,
+    version='0.3.7',
     author='Excelero, Inc. - Andreas Krause',
     url='https://github.com/Excelero/nvmesh-shell',
     description='Excelero NVMesh interactive shell and cli tool.',
