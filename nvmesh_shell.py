@@ -31,7 +31,7 @@ import os
 import getpass
 import paramiko
 import base64
-from humanfriendly.tables import format_smart_table, format_pretty_table
+from humanfriendly.tables import format_smart_table
 import humanfriendly
 from constants import *
 import nvmesh_api
@@ -41,7 +41,7 @@ from multiprocessing import Pool
 import dateutil.parser
 import re
 
-version = '0.3.7'
+version = '0.3.8'
 
 
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
@@ -570,8 +570,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                         if segment['type'] == 'raftonly':
                             continue
                         else:
-                            remaining_dirty_bits = remaining_dirty_bits + (segment['remainingDirtyBits']
-                                                                           if 'remainingDirtyBits' in segment else 0)
+                            if segment["remainingDirtyBits"]:
+                                remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits']
                             target_disk_list.append(segment['diskID'])
                             if short is True:
                                 target_list.append(segment['node_id'].split('.')[0])
@@ -643,7 +643,7 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                        'Target Disks',
                                        'Target Classes',
                                        'Drive Classes',
-                                       'Awarness/Domain'])
+                                       'Awareness/Domain'])
     elif details is True and layout:
         if csv_format is True:
             return formatter.print_tsv(volumes_list)
@@ -662,7 +662,7 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                        'Target Disks',
                                        'Target Classes',
                                        'Drive Classes',
-                                       'Awarness/Domain',
+                                       'Awareness/Domain',
                                        'Volume Layout'])
     else:
         if csv_format is True:
@@ -733,11 +733,14 @@ def show_drive_classes(details, csv_format, json_format, classes):
                 domain_list = None
             for disk in drive_class['disks']:
                 drive_model_list.append(disk['model'])
-                for drive in disk['disks']:
-                    if details is True:
-                        drive_target_list.append(' '.join([drive['diskID'], drive['node_id']]))
-                    else:
-                        drive_target_list.append(drive['diskID'])
+                if disk["disks"]:
+                    for drive in disk['disks']:
+                        if details is True:
+                            drive_target_list.append(' '.join([drive['diskID'], drive['node_id']]))
+                        else:
+                            drive_target_list.append(drive['diskID'])
+                else:
+                    drive_target_list = []
             drive_class_list.append([drive_class['_id'],
                                      '; '.join(drive_model_list),
                                      '; '.join(drive_target_list),
@@ -748,9 +751,9 @@ def show_drive_classes(details, csv_format, json_format, classes):
         return formatter.print_json(drive_class_list)
     else:
         return format_smart_table(drive_class_list, ['Drive Class',
-                                                     'Drive Models',
+                                                     'Drive Model',
                                                      'Drive Details',
-                                                     'Awarness/Domains'])
+                                                     'Awareness/Domains'])
 
 
 def show_logs(all_logs):
@@ -808,7 +811,7 @@ def show_target_classes(csv_format, json_format, classes):
         return format_smart_table(target_classes_list, ['Target Class',
                                                         'Description',
                                                         'Target Nodes',
-                                                        'Awarness/Domains'])
+                                                        'Awareness/Domains'])
 
 
 def count_active_targets():
@@ -963,7 +966,7 @@ def manage_mcm(clients, action):
     if clients is not None:
         client_list = clients
     else:
-        client_list = get_client_list()
+        client_list = get_client_list(False)
     for client in client_list:
         if action == "stop":
             ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
@@ -1107,9 +1110,6 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
     api_payload = {}
     payload = {}
     if action == "create":
-        if capacity is None:
-            return formatter.yellow(
-                "Size/capacity information missing! Use the -S argument to provide the volume size/capacity")
         payload = {
             "name": name,
             "capacity": "MAX" if str(capacity[0]).upper() == "MAX" else int(humanfriendly.parse_size(capacity[0],
@@ -1127,29 +1127,20 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
             payload["limitByDisks"] = limit_by_disks
         if awareness is not None:
             payload["domain"] = awareness[0]
-        if raid_level is None and vpg is None:
-            return formatter.yellow(
-                "Raid level information missing! Use the -r argument to set the raid level.")
         if raid_level is not None and vpg is None:
             payload["RAIDLevel"] = RAID_LEVELS[raid_level[0]]
             if raid_level[0] == "lvm":
                 pass
             elif raid_level[0] == "0":
                 payload["stripeSize"] = 32
-                if stripe_width is None:
-                    return formatter.yellow(
-                        "Stripe width information missing! Use the -w argument to set the stripe width.")
                 payload["stripeWidth"] = int(stripe_width[0])
             elif raid_level[0] == "1":
                 payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
             elif raid_level[0] == "10":
                 payload["stripeSize"] = 32
-                if stripe_width is None:
-                    return formatter.yellow(
-                        "Stripe width information missing! Use the -w argument to set the stripe width.")
                 payload["stripeWidth"] = int(stripe_width[0])
                 payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
-        if vpg is not None:
+        elif vpg is not None and raid_level is None:
             payload["VPG"] = vpg[0]
         api_payload["create"] = [payload]
         api_payload["remove"] = []
@@ -1177,8 +1168,69 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
                 output.append(" ".join(["Volume", item['remove'][0]['id'], "successfully deleted.",
                                         formatter.green('OK')]))
             else:
-                output.append(" ".join([formatter.red('Failed'), "to delete", volume, "-", item['remove'][0]['ex']]))
+                output.append(" ".join([formatter.red('Failed'), "to delete", item['remove'][0]['id'], "-",
+                                        item['remove'][0]['ex']]))
         return "\n".join(output)
+
+
+def update_volume(volume, capacity, description, drives, targets, drive_classes, target_classes):
+    if capacity:
+        volume["capacity"] = "MAX" if str(capacity[0]).upper() == "MAX" else int(
+            humanfriendly.parse_size(capacity[0], binary=True))
+    if description:
+        volume["description"] = " ".join(description)
+    if drives:
+        volume["limitByDisks"] = drives
+    if targets:
+        volume["limitByNodes"] = targets
+    if target_classes:
+        volume["serverClasses"] = target_classes
+    if drive_classes:
+        volume["diskClasses"] = drive_classes
+    api_payload = {}
+    api_payload["remove"] = []
+    api_payload["create"] = []
+    api_payload["edit"] = [volume]
+    api_return = json.loads(nvmesh.manage_volume(api_payload))
+    if api_return["edit"][0]["success"] is True:
+        output = " ".join(["Volume", volume["name"], "successfully updated.", formatter.green('OK')])
+        return output
+    else:
+        output = " ".join([formatter.red('Failed'), "to update", volume["name"]])
+        return output
+
+
+def update_target_class(target_class, servers, description):
+    if servers:
+        target_class["targetNodes"] = servers
+    if description:
+        target_class["description"] = " ".join(description)
+    api_payload = [target_class]
+    api_return = json.loads(nvmesh.update_target_class(api_payload))
+    print api_return
+    if api_return[0]["success"] is True:
+        output = " ".join(["target class", target_class["name"], "successfully updated.", formatter.green('OK')])
+        return output
+    else:
+        output = " ".join([formatter.red('Failed'), "to update", target_class["name"], "-", api_return[0]["err"]])
+        return output
+
+
+def update_drive_class(drive_class, drives, description, file_path):
+    if description:
+        drive_class["description"] = description[0]
+    if file_path:
+        drive_class["disks"][0]["disks"] = parse_drive_args(open(file_path[0], 'r').readlines())
+    if drives:
+        drive_class["disks"][0]["disks"] = parse_drive_args(drives)
+    api_payload = [drive_class]
+    api_return = json.loads(nvmesh.update_drive_class(api_payload))
+    if api_return[0]["success"] is True:
+        output = " ".join(["Drive class", drive_class["_id"], "successfully updated.", formatter.green('OK')])
+        return output
+    else:
+        output = " ".join([formatter.red('Failed'), "to update", drive_class["_id"]])
+        return output
 
 
 def manage_drive_class(action, class_list, drives, model, name, description, domains, file_path):
@@ -1214,14 +1266,13 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
         return "\n".join(output)
     elif action == "save":
         payload["_id"] = name[0]
-        if description is not None:
+        if description:
             payload["description"] = description
-        if domains is not None:
+        if domains:
             payload["domains"] = parse_domain_args(domains)
-        if file_path is not None:
+        if file_path:
             payload["disks"] = [{"model": model[0],
-                                 "disks": parse_drive_args(open(file_path[0], 'r').readlines())
-                                 if file_path is not None else parse_drive_args(drives)}]
+                                 "disks": parse_drive_args(open(file_path[0], 'r').readlines())}]
         else:
             payload["disks"] = [{"model": model[0],
                                  "disks": parse_drive_args(drives)}]
@@ -1315,7 +1366,7 @@ def client_control_job(action, clients, volumes):
                                 str(api_return)]))
 
 
-def show_drives(details, targets):
+def show_drives(details, targets, tsv):
     get_api_ready()
     drive_list = []
     target_list = get_target_list(short=False)
@@ -1345,6 +1396,8 @@ def show_drives(details, targets):
                                        humanfriendly.format_size((disk['block_size'] * disk['blocks']), binary=True),
                                        disk['status'],
                                        target])
+    if tsv:
+        return formatter.print_tsv(drive_list)
     if details:
         return format_smart_table(sorted(drive_list),
                                   ['Vendor', 'Model', 'Drive ID', 'Size', 'Status', 'BS', 'Wear',
@@ -1437,7 +1490,7 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
         elif args.nvmesh_object == 'log':
             self.ppaged(show_logs(args.all))
         elif args.nvmesh_object == 'drive':
-            self.poutput(show_drives(args.detail, args.server))
+            self.poutput(show_drives(args.detail, args.server, args.tsv))
         elif args.nvmesh_object == 'drivemodel':
             self.poutput(show_drive_models(args.detail))
         elif args.nvmesh_object == 'version':
@@ -1463,14 +1516,14 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                             help='Optional - Limit volume allocation to specific target nodes.')
     group = add_parser.add_mutually_exclusive_group()
     group.add_argument('-m', '--drive', nargs='+', required=False,
-                            help='Drive/media information. Needs to include the drive ID/serial and the target'
-                                 'node/server name in the format driveId:targetName'
-                                 'Example: -m "Example: 174019659DA4.1:test.lab"')
+                       help='Drive/media information. Needs to include the drive ID/serial and the target'
+                            'node/server name in the format driveId:targetName'
+                            'Example: -m "Example: 174019659DA4.1:test.lab"')
     group.add_argument('-f', '--file', nargs=1, required=False,
-                            help='Path to the file containing the driveId:targetName information. '
-                                 'Needs to'
-                                 'Example: -f "/path/to/file". This argument is not allowed together with the -m '
-                                 'argument')
+                       help='Path to the file containing the driveId:targetName information. '
+                            'Needs to'
+                            'Example: -f "/path/to/file". This argument is not allowed together with the -m '
+                            'argument')
     add_parser.add_argument('-M', '--model', nargs=1, required=False,
                             help='Drive model information for the new drive class. '
                                  'Note: Must be the exactly the same model designator as when running the'
@@ -1483,14 +1536,15 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                             help="Awareness domain/s information of the target or drive class. "
                                  "A domain has a scope and identifier component. "
                                  "You must provide both components for each domain to be used/created."
-                                 "-O scope:Rack&identifier:A or in case you want to use more than one domain descriptor:"
+                                 "-O scope:Rack&identifier:A "
+                                 "or in case you want to use more than one domain descriptor:"
                                  "-O scope:Rack&identifier:A scope:Datacenter&identifier:DRsite")
     add_parser.add_argument('-c', '--count', nargs=1, required=False,
                             help='Number of volumes to create and add. 100 Max.')
     add_parser.add_argument('-t', '--target-class', nargs='+', required=False,
-                            help='Optional - Limit volume allocation to specific target classes.')
+                            help='Limit volume allocation to specific target classes.')
     add_parser.add_argument('-d', '--drive-class', nargs='+', required=False,
-                            help='Optional - Limit volume allocation to specific drive classes.')
+                            help='Limit volume allocation to specific drive classes.')
     add_parser.add_argument('-w', '--stripe-width', nargs=1, required=False,
                             help='Number of disks to use. Required for R0 and R10.')
     add_parser.add_argument('-s', '--server', nargs='+', required=False,
@@ -1502,7 +1556,9 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
 
     @with_argparser(add_parser)
     def do_add(self, args):
-        """The 'add' sub-command will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment. E.g. 'add hosts' will add host entries to your nvmesh-shell environment while 'add volume' will create and add a new volume to the NVMesh cluster."""
+        """The 'add' sub-command will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment.
+E.g. 'add hosts' will add host entries to your nvmesh-shell environment while 'add volume' will create and add a new
+volume to the NVMesh cluster."""
         action = "add"
         if args.nvmesh_object == 'host':
             hosts.manage_hosts(action, args.server, False)
@@ -1538,8 +1594,20 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                                                  parse_domain_args(args.classdomain)))
         elif args.nvmesh_object == 'volume':
             if args.name is None:
-                print formatter.yellow(
-                    "Volume name missing! Use the -n argument to provide a volume name")
+                print(formatter.yellow(
+                    "Volume name missing! Use the -n argument to provide a volume name"))
+                return
+            if args.size is None:
+                print(formatter.yellow(
+                    "Size/capacity information is missing! Use the -S argument to provide the volume size."))
+                return
+            if args.raid_level is None and args.vpg is None:
+                print(formatter.yellow(
+                    "Raid level information missing! Use the -r argument to set the raid level."))
+                return
+            if args.raid_level[0] != '1' and args.stripe_width is None:
+                print(formatter.yellow(
+                    "Stripe width information missing! Use the -w argument to set the stripe width."))
                 return
             if args.count is not None:
                 if int(args.count[0]) > 100:
@@ -1577,7 +1645,8 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
     @with_argparser(delete_parser)
     def do_delete(self, args):
         """The 'delete' sub-command will let you delete nvmesh objects in your cluster or nvmesh-shell
-runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh-shell environment and 'delete volume' will delete NVMesh volumes in your NVMesh cluster."""
+runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh-shell environment and 'delete volume'
+will delete NVMesh volumes in your NVMesh cluster."""
         action = "delete"
         if args.nvmesh_object == 'host':
             hosts.manage_hosts(action, args.server, False)
@@ -1663,7 +1732,9 @@ runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh
 
     @with_argparser(check_parser)
     def do_check(self, args):
-        """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status. E.g. 'check targets' will check the NVMesh target services throughout the cluster."""
+        """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your
+cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status. E.g.
+'check targets' will check the NVMesh target services throughout the cluster."""
         user.get_ssh_user()
         user.get_api_user()
         mgmt.get_management_server()
@@ -1884,6 +1955,72 @@ Excample: testssh -s servername"""
         ssh = SSHRemoteOperations()
         user.get_ssh_user()
         ssh.test_ssh_connection(args.server)
+
+    update_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    update_parser.add_argument('object', choices=['volume', 'driveclass', 'targetclass'],
+                               help='Specify the NVMesh object to be updated.')
+    update_parser.add_argument('-n', '--name', nargs=1, required=True,
+                               help='The name of the object to be updated.')
+    update_parser.add_argument('-S', '--size', nargs='+', required=False,
+                               help='The new/updated size/capacity of the volume.\n '
+                                    'The volumes size value is base*2/binary. \n'
+                                    'Example: -s 12GB or 12GiB will size the volume with a size of 12884901888 bytes.\n'
+                                    'Some valid input formats samples: xGB, x GB, x gigabyte, x GiB or xG')
+    update_parser.add_argument('-D', '--description', required=False, nargs='+',
+                               help='The new/updated name of the NVMesh object.')
+    update_parser.add_argument('-s', '--server', nargs='+', required=False, help='Specify a single server or a space '
+                                                                                 'separated list of servers.')
+    group = update_parser.add_mutually_exclusive_group()
+    group.add_argument('-m', '--drive', nargs='+', required=False,
+                       help='Drive/media information. Needs to include the drive ID/serial and the target'
+                            'node/server name in the format driveId:targetName'
+                            'Example: -m "Example: 174019659DA4.1:test.lab"')
+    group.add_argument('-f', '--file', nargs=1, required=False,
+                       help='Path to the file containing the driveId:targetName information. '
+                            'Needs to'
+                            'Example: -f "/path/to/file". This argument is not allowed together with the -m '
+                            'argument')
+    update_parser.add_argument('-l', '--limit-by-disk', nargs='+', required=False,
+                               help='Optional - Limit volume allocation to specific drives.')
+    update_parser.add_argument('-L', '--limit-by-target', nargs='+', required=False,
+                               help='Optional - Limit volume allocation to specific target nodes.')
+    update_parser.add_argument('-t', '--target-class', nargs='+', required=False,
+                               help='Optional - Limit volume allocation to specific target classes.')
+    update_parser.add_argument('-d', '--drive-class', nargs='+', required=False,
+                               help='Optional - Limit volume allocation to specific drive classes.')
+
+    @with_argparser(update_parser)
+    def do_update(self, args):
+        """Update and edit an existing NVMesh volume, driveclass or targetclass."""
+        if args.object == 'volume':
+            get_api_ready()
+            volume = json.loads(nvmesh.get_volume(args.name[0]))
+            if len(volume) == 0:
+                print(formatter.yellow("%s is not a valid volume name. A volume with this name doesn't exist."
+                                       % args.name[0]))
+                return
+            else:
+                self.poutput(update_volume(volume[0], args.size, args.description, args.limit_by_disk,
+                                           args.limit_by_target, args.drive_class, args.target_class))
+        elif args.object == 'targetclass':
+            get_api_ready()
+            target_class = json.loads(nvmesh.get_target_class(args.name[0]))
+            if len(target_class) == 0:
+                print(formatter.yellow("%s is not a valid target class name. "
+                                       "A target class with this name doesn't exist."
+                                       % args.name[0]))
+                return
+            else:
+                self.poutput(update_target_class(target_class[0], args.server, args.description))
+        elif args.object == 'driveclass':
+            get_api_ready()
+            drive_class = json.loads(nvmesh.get_drive_class(args.name[0]))
+            if len(drive_class) == 0:
+                print(formatter.yellow("%s is not a valid drive class name. A drive class with this name doesn't exist."
+                                       % args.name[0]))
+                return
+            else:
+                self.poutput(update_drive_class(drive_class[0], args.drive, args.description, args.file))
 
 
 def start_shell():

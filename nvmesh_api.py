@@ -23,8 +23,6 @@
 import requests
 import urllib3
 import logger
-import datetime
-import os
 
 
 class Api:
@@ -98,6 +96,11 @@ class Api:
         self.action = "get"
         return self.execute_api_call()
 
+    def get_volume(self, volume_id):
+        self.endpoint = '/volumes/all/%s/%s?filter={"_id":"%s"}&sort={}' % (0, 0, volume_id)
+        self.action = "get"
+        return self.execute_api_call()
+
     def get_cluster_status(self):
         self.endpoint = '/status'
         self.action = "get"
@@ -121,6 +124,17 @@ class Api:
         self.action = "get"
         return self.execute_api_call()
 
+    def get_drive_class(self, name):
+        self.endpoint = '/diskClasses/all?filter={"_id": "%s"}&sort={}' % name
+        self.action = "get"
+        return self.execute_api_call()
+
+    def update_drive_class(self, payload):
+        self.endpoint = '/diskClasses/update'
+        self.action = "post"
+        self.payload = payload
+        return self.execute_api_call()
+
     def get_disk_models(self):
         self.endpoint = '/disks/models'
         self.action = "get"
@@ -134,6 +148,17 @@ class Api:
     def get_target_classes(self):
         self.endpoint = '/serverClasses/all'
         self.action = "get"
+        return self.execute_api_call()
+
+    def get_target_class(self, name):
+        self.endpoint = '/serverClasses/all?filter={"_id": "%s"}&sort={}' % name
+        self.action = "get"
+        return self.execute_api_call()
+
+    def update_target_class(self, payload):
+        self.endpoint = '/serverClasses/update'
+        self.action = "post"
+        self.payload = payload
         return self.execute_api_call()
 
     def get_server_by_id(self, server):
