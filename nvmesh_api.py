@@ -39,6 +39,7 @@ class Api:
         self.session.verify = False
         self.err = None
         self.action = None
+        self.timeout = 5
 
     def execute_api_call(self):
         if self.action == "post":
@@ -46,7 +47,7 @@ class Api:
                        "API action: POST %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
             logger.log("debug", "API payload: %s" % self.payload if '/login' not in self.endpoint else 'login')
             self.response = self.session.post(
-                '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload)
+                '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload, timeout=self.timeout)
             logger.log("debug", "API response: %s" % self.response)
             logger.log(
                 "debug",
@@ -56,7 +57,7 @@ class Api:
             logger.log("debug",
                        "API action: GET %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
             self.response = self.session.get(
-                "%s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
+                "%s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint), timeout=self.timeout)
             logger.log("debug", "API response status code: %s" % self.response)
             logger.log("debug", "API response content is: %s" % self.response.content)
             return self.response.content
@@ -166,9 +167,10 @@ class Api:
         self.action = "get"
         return self.execute_api_call()
 
-    def target_cluster_shutdown(self):
+    def target_cluster_shutdown(self, payload):
         self.endpoint = '/servers/setBatchControlJobs'
         self.action = "post"
+        self.payload = payload
         return self.execute_api_call()
 
     def manage_volume(self, payload):
@@ -193,4 +195,9 @@ class Api:
         self.payload = payload
         self.endpoint = '/serverClasses/%s' % action
         self.action = "post"
+        return self.execute_api_call()
+
+    def get_managers(self):
+        self.endpoint = '/managementCluster/all/0/0'
+        self.action = 'get'
         return self.execute_api_call()
