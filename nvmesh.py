@@ -447,16 +447,20 @@ def show_targets(details, csv_format, json_format, server, short):
                     target_name = target['node_id']
                 target_disk_list = []
                 target_nic_list = []
+                if target["health"] == "healthy":
+                    health = formatter.green(formatter.bold("Healthy ")) + u'\u2705'
+                else:
+                    health = formatter.red(formatter.bold("Critical ")) + u'\u274C'
                 for disk in target['disks']:
                     target_disk_list.append(disk['diskID'])
                 for nic in target['nics']:
                     target_nic_list.append(nic['nicID'])
                 if details is True:
-                    target_list.append([target_name, target['health'], target['version'],
+                    target_list.append([target_name, health, target['version'],
                                         ' '.join(target_disk_list),
                                         ' '.join(target_nic_list)])
                 else:
-                    target_list.append([target_name, target['health'], target['version']])
+                    target_list.append([target_name, health, target['version']])
         if details is True:
             if csv_format is True:
                 return formatter.print_tsv(target_list)
@@ -572,6 +576,10 @@ def show_clients(csv_format, json_format, server, short):
                 continue
             else:
                 volume_list = []
+                if client["health"] == "healthy":
+                    health = formatter.green(formatter.bold("Healthy ")) + u'\u2705'
+                else:
+                    health = formatter.red(formatter.bold("Critical ")) + u'\u274C'
                 if short is True:
                     client_name = client['client_id'].split('.')[0]
                 else:
@@ -580,7 +588,7 @@ def show_clients(csv_format, json_format, server, short):
                     if volume['vol_status'] == 4:
                         volume_list.append(volume['name'])
                 client_list.append(
-                    [client_name, client['health'], client['version'], ' '.join(sorted(set(volume_list)))])
+                    [client_name, health, client['version'], ' '.join(sorted(set(volume_list)))])
         if csv_format is True:
             return formatter.print_tsv(client_list)
         elif json_format is True:
@@ -598,13 +606,13 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
             remaining_dirty_bits = 0
             name = formatter.bold(volume["name"])
             if volume["health"] == "healthy":
-                health = formatter.green(formatter.bold("Healthy"))
+                health = formatter.green(formatter.bold("Healthy ")) + u'\u2705'
                 status = formatter.green(formatter.bold(volume["status"].capitalize()))
             elif volume["health"] == "alarm":
-                health = formatter.yellow(formatter.bold("Alarm"))
+                health = formatter.yellow(formatter.bold("Alarm !!"))
                 status = formatter.yellow(formatter.bold(volume["status"].capitalize()))
             else:
-                health = formatter.red(formatter.bold("Critical"))
+                health = formatter.red(formatter.bold("Critical ")) + u'\u274C'
                 status = formatter.red(formatter.bold(volume["status"].capitalize()))
 
             if volumes is not None and volume['name'] not in volumes:
@@ -1454,13 +1462,14 @@ def show_drives(details, targets, tsv):
                 target_details = json.loads(nvmesh.get_server_by_id(target))
                 for disk in target_details['disks']:
                     vendor = NVME_VENDORS.get(disk['Vendor'], disk['Vendor'])
+                    status = u'\u2705' if disk["status"].lower() == "ok" else u'\u274C'
                     if details:
                         drive_list.append([vendor,
                                            disk['Model'],
                                            disk['diskID'],
                                            humanfriendly.format_size((disk['block_size'] * disk['blocks']),
                                                                      binary=True),
-                                           disk['status'],
+                                           status,
                                            humanfriendly.format_size(disk['block_size'], binary=True),
                                            " ".join([str(100 - int((disk['Available_Spare'].split("_")[0]))), "%"]),
                                            target,
@@ -1473,7 +1482,7 @@ def show_drives(details, targets, tsv):
                                            disk['diskID'],
                                            humanfriendly.format_size((disk['block_size'] * disk['blocks']),
                                                                      binary=True),
-                                           disk['status'],
+                                           status,
                                            target])
         if tsv:
             return formatter.print_tsv(drive_list)
