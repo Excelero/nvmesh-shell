@@ -33,7 +33,6 @@ import paramiko
 import base64
 from humanfriendly.tables import format_smart_table
 import humanfriendly
-from constants import *
 import nvmesh_api
 import time
 import urllib3
@@ -41,7 +40,31 @@ from multiprocessing import Pool
 import dateutil.parser
 import re
 
-version = '0.3.9'
+version = '39'
+
+RAID_LEVELS = {
+    'lvm': 'LVM/JBOD',
+    '0': 'Striped RAID-0',
+    '1': 'Mirrored RAID-1',
+    '10': 'Striped & Mirrored RAID-10'
+}
+
+NVME_VENDORS = {
+    '0x1344': 'Micron',
+    '0x15b7': 'SanDisk',
+    '0x1179': 'Toshiba',
+    '0x144D': 'Samsung'
+}
+
+WARNINGS = {
+    'delete_volume': 'This operation will DESTROY ALL DATA on the volume selected and is IRREVERSIBLE.\nDo you want to continue? [Yes|No]: ',
+    'format_drive': 'This operation will DESTROY ALL DATA on the drives and is IRREVERSIBLE.\nDo you want to continue? [Yes|No]: ',
+    'force_detach_volume': 'This operation will immediately HALT ALL I/O and will impact any running applications expecting it to be available. It is recommended that all applications and/or file systems using this volume be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: ',
+    'stop_nvmesh_client': 'This operation will HALT ALL I/O TO ALL VOLUMES in use by THE SELECTED CLIENT. It is recommended that all applications and/or file systems supported by NVMesh volumes on the clients be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: ',
+    'stop_nvmesh_target': 'This operation will make any UNPROTECTED VOLUMES supported by drives in the selected targets IMMEDIATELY UNAVAILABLE. Any PROTECTED VOLUMES will become IMMEDIATELY DEGRADED until services are restarted or volumes are rebuilt to alternate drives in another target.\nDo you want to continue? [Yes|No]: ',
+    'stop_nvmesh_manager': 'This operation will halt the running instance of NVMesh Management on the selected servers. If Management is deployed as a stand-alone instance, or this is the last running HA instance, further changes to NVMesh cluster volumes, clients, and targets will be unavailable until Management is restarted on at least one node.\nDo you want to continue? [Yes|No]: ',
+    'stop_cluster': 'ALL NVMesh resources will become UNAVAILABLE and ALL IO will stop. It is recommended that all applications and/or file systems using any resource out of this cluster be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: '
+}
 
 
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
@@ -213,6 +236,8 @@ class UserCredentials:
         try:
             self.SSH_secrets = open(self.SSH_secrets_file, 'r').read().split(' ')
         except Exception, e:
+            logger.log('critical', e.message)
+            formatter.print_red(e.message)
             pass
         if self.SSH_secrets is None:
             formatter.print_yellow("SSH user credentials not set yet!")
@@ -230,6 +255,8 @@ class UserCredentials:
         try:
             self.API_secrets = open(self.API_secrets_file, 'r').read().split(' ')
         except Exception, e:
+            logger.log('critical', e.message)
+            formatter.print_red(e.message)
             pass
         if self.API_secrets is None:
             formatter.print_yellow("API user credentials not set yet!")
@@ -328,7 +355,7 @@ class SSHRemoteOperations:
 
     def check_if_service_is_running(self, host, service):
         try:
-            cmd_output = self.execute_remote_command(host, CMD_CHECK_IF_SERVICE_IS_RUNNING % service)
+            cmd_output = self.execute_remote_command(host, "/etc/init.d/%s" % service)
             if cmd_output[0] == 0:
                 return True
             elif cmd_output[0] == 3:
@@ -569,6 +596,17 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
         volumes_list = []
         for volume in volumes_json:
             remaining_dirty_bits = 0
+            name = formatter.bold(volume["name"])
+            if volume["health"] == "healthy":
+                health = formatter.green(formatter.bold("Healthy"))
+                status = formatter.green(formatter.bold(volume["status"].capitalize()))
+            elif volume["health"] == "alarm":
+                health = formatter.yellow(formatter.bold("Alarm"))
+                status = formatter.yellow(formatter.bold(volume["status"].capitalize()))
+            else:
+                health = formatter.red(formatter.bold("Critical"))
+                status = formatter.red(formatter.bold(volume["status"].capitalize()))
+
             if volumes is not None and volume['name'] not in volumes:
                 continue
             else:
@@ -611,7 +649,7 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                                            segment['type'],
                                                            str(segment['lbs']) if segment['lbs'] != 0 else "n/a",
                                                            str(segment['lbe']) if segment['lbe'] != 0 else "n/a",
-                                                           segment['status'],
+                                                           u'\u274C' if segment['isDead'] is True else u'\u2705',
                                                            segment['diskID'],
                                                            segment['node_id']])
                         chunk_count += 1
@@ -622,7 +660,7 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                             if segment['type'] == 'raftonly':
                                 continue
                             else:
-                                if segment["remainingDirtyBits"]:
+                                if "remainingDirtyBits" in segment:
                                     remaining_dirty_bits = remaining_dirty_bits + segment['remainingDirtyBits']
                                 target_disk_list.append(segment['diskID'])
                                 if short is True:
@@ -631,9 +669,9 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                     target_list.append(segment['node_id'])
 
                 if details is True and not layout:
-                    volumes_list.append([volume['name'],
-                                         volume['health'],
-                                         volume['status'],
+                    volumes_list.append([name,
+                                         health,
+                                         status,
                                          volume['RAIDLevel'],
                                          humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
                                                                    binary=True),
@@ -646,9 +684,9 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                          awareness_domain if awareness_domain is not None else "n/a"])
 
                 elif details is True and layout:
-                    volumes_list.append([volume['name'],
-                                         volume['health'],
-                                         volume['status'],
+                    volumes_list.append([name,
+                                         health,
+                                         status,
                                          volume['RAIDLevel'],
                                          humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
                                                                    binary=True),
@@ -669,9 +707,9 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                                                                  "Disk ID",
                                                                                  "Last Known Target"])])
                 else:
-                    volumes_list.append([volume['name'],
-                                         volume['health'],
-                                         volume['status'],
+                    volumes_list.append([name,
+                                         health,
+                                         status,
                                          volume['RAIDLevel'],
                                          humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
                                                                    binary=True),
@@ -742,10 +780,7 @@ def show_vpgs(csv_format, json_format, vpgs):
             if vpgs is not None and vpg['name'] not in vpgs:
                 continue
             else:
-                if 'description' not in vpg:
-                    vpg_description = ''
-                else:
-                    vpg_description = vpg['description']
+                vpg_description = vpg['description'] if 'description' in vpg else " "
                 if 'stripeWidth' not in vpg:
                     vpg_stripe_width = ''
                 else:
@@ -756,7 +791,7 @@ def show_vpgs(csv_format, json_format, vpgs):
                     server_classes_list.append(server_class)
 
             vpgs_list.append(
-                [vpg['name'], vpg['RAIDLevel'], vpg_stripe_width,
+                [vpg['name'], vpg_description, vpg['RAIDLevel'], vpg_stripe_width,
                  humanfriendly.format_size(vpg['capacity'], binary=True),
                  '; '.join(disk_classes_list), '; '.join(server_classes_list)])
         if csv_format is True:
@@ -764,8 +799,13 @@ def show_vpgs(csv_format, json_format, vpgs):
         elif json_format is True:
             return formatter.print_json(vpgs_list)
         else:
-            return format_smart_table(vpgs_list, ['VPG Name', 'RAID Level', 'Stripe Width', 'Reserved Capacity',
-                                                  'Disk Classes', 'Target Classes'])
+            return format_smart_table(vpgs_list, ['VPG Name',
+                                                  'Description',
+                                                  'RAID Level',
+                                                  'Stripe Width',
+                                                  'Reserved Capacity',
+                                                  'Disk Classes',
+                                                  'Target Classes'])
 
 
 def show_drive_classes(details, csv_format, json_format, classes):
@@ -871,7 +911,7 @@ def count_active_targets():
     active_targets = 0
     for target in get_target_list(short=True):
         ssh = SSHRemoteOperations()
-        ssh_return = ssh.return_remote_command_std_output(target, CMD_STATUS_NVMESH_TARGET)
+        ssh_return = ssh.return_remote_command_std_output(target, "/etc/init.d/nvmeshtarget status")
         if ssh_return[0] == 0:
             active_targets += 1
     return active_targets
@@ -923,7 +963,10 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
         if scope == 'client':
             host_list = get_client_list(False)
         if scope == 'mgr':
-            host_list = get_manager_list(short=True)
+            if action is not "start":
+                host_list = get_manager_list(short=True)
+            else:
+                host_list = ManagementServer().get_management_server_list()
 
     if scope == "target":
         if action == "stop" and servers is None and graceful:
@@ -935,20 +978,21 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
             return
 
     if parallel:
-        process_pool = Pool(len(set(host_list)))
+        if host_list and len(host_list) > 0:
+            process_pool = Pool(len(set(host_list)))
+        else:
+            return
         parallel_execution_map = []
         for host in set(host_list):
             if action == "check":
-                parallel_execution_map.append([host, "service nvmesh%s status" % scope])
+                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s status" % scope])
             elif action == "start":
-                parallel_execution_map.append([host, "service nvmesh%s start" % scope])
+                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s start" % scope])
             elif action == "stop":
-                parallel_execution_map.append([host, "service nvmesh%s stop" % scope])
+                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s stop" % scope])
             elif action == "restart":
-                if scope is not 'target':
-                    parallel_execution_map.append([host, "service nvmesh%s restart" % scope])
-                else:
-                    parallel_execution_map.append([host, "service nvmesh%s start" % scope])
+                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s restart" % scope])
+
         command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
         process_pool.close()
         for command_return in command_return_list:
@@ -983,13 +1027,13 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
     else:
         for server in host_list:
             if action == "check":
-                ssh_return = ssh.return_remote_command_std_output(server, "service nvmesh%s status" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s status" % scope)
             elif action == "start":
-                ssh_return = ssh.return_remote_command_std_output(server, "service nvmesh%s start" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s start" % scope)
             elif action == "stop":
-                ssh_return = ssh.return_remote_command_std_output(server, "service nvmesh%s stop" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s stop" % scope)
             elif action == "restart":
-                ssh_return = ssh.return_remote_command_std_output(server, "service nvmesh%s restart" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s restart" % scope)
             if ssh_return[0] == 0:
                 if details is True:
                     output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.green('OK')]))
@@ -1019,13 +1063,13 @@ def manage_mcm(clients, action):
         client_list = get_client_list(False)
     for client in client_list:
         if action == "stop":
-            ssh.execute_remote_command(client, CMD_STOP_NVMESH_MCM)
+            ssh.execute_remote_command(client, "/opt/NVMesh/client-repo/management_cm/managementCMClient.py stop")
             print client, "\tStopped the MangaementCM services."
         elif action == "start":
-            ssh.execute_remote_command(client, CMD_START_NVMESH_MCM)
+            ssh.execute_remote_command(client, "/opt/NVMesh/client-repo/management_cm/managementCMClient.py start")
             print client, "\tStarted the MangaementCM services."
         elif action == "restart":
-            ssh.execute_remote_command(client, CMD_RESTART_NVMESH_MCM)
+            ssh.execute_remote_command(client, "/opt/NVMesh/client-repo/management_cm/managementCMClient.py")
             print client, "\tRestarted the MangaementCM services."
 
 
@@ -1237,7 +1281,7 @@ def update_volume(volume, capacity, description, drives, targets, drive_classes,
         volume["serverClasses"] = target_classes
     if drive_classes:
         volume["diskClasses"] = drive_classes
-    api_payload = {}
+    api_payload = dict()
     api_payload["remove"] = []
     api_payload["create"] = []
     api_payload["edit"] = [volume]
@@ -1397,27 +1441,6 @@ def manage_target_class(action, class_list, name, servers, description, domains)
                     output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't create Target Class", line[0],
                                             " - ", "Check for duplicates."]))
             return "\n".join(output)
-
-
-def client_control_job(action, clients, volumes):
-    if get_api_ready() == 0:
-        for client in clients:
-            for volume in volumes:
-                payload = {
-                    '_id': client,
-                    'controlJobs': [{
-                        'uuid': volume,
-                        'control': CONTROL_JOBS[action]
-                    }]
-                }
-                api_return = nvmesh.set_control_jobs(payload)
-                if api_return == 'null':
-                    print(
-                        " ".join([action.title(), "volume %s on client %s:" % (volume, client), formatter.green("OK")]))
-                else:
-                    print(
-                        " ".join([action.title(), "volume %s on client %s:" % (volume, client), formatter.red("Failed"),
-                                  str(api_return)]))
 
 
 def show_drives(details, targets, tsv):
@@ -1696,6 +1719,8 @@ volume to the NVMesh cluster."""
                                help='Specify a single volume or a space separated list of volumes.')
     delete_parser.add_argument('-f', '--force', required=False, action='store_const', const=True, default=False,
                                help='Use this flag to forcefully delete the volume/s.')
+    delete_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                               help='Automatically answer and skip operational warnings.')
 
     @with_argparser(delete_parser)
     def do_delete(self, args):
@@ -1725,14 +1750,21 @@ will delete NVMesh volumes in your NVMesh cluster."""
                 self.poutput(manage_drive_class('delete', get_drive_class_list(), None, None, None, None, None, None))
             else:
                 self.poutput(manage_drive_class('delete', args.drive_class, None, None, None, None, None, None))
+
         elif args.nvmesh_object == 'volume':
             if args.volume[0] == 'all':
                 volume_list = get_volume_list()
+            else:
+                volume_list = args.volume
+            if args.yes:
                 self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None, None,
                                            None, None, args.force))
             else:
-                self.poutput(manage_volume('remove', args.volume, None, None, None, None, None, None, None, None, None,
-                                           None, None, args.force))
+                if "y" in raw_input(WARNINGS['delete_volume']).lower():
+                    self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None,
+                                               None, None, None, args.force))
+                else:
+                    return
 
     attach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     attach_parser.add_argument('-c', '--client', nargs='+', required=True,
@@ -1758,6 +1790,8 @@ will delete NVMesh volumes in your NVMesh cluster."""
                                help='Specify a single server or a space separated list of servers.')
     detach_parser.add_argument('-v', '--volume', nargs='+', required=True,
                                help='Specify a single volume or a space separated list of volumes.')
+    detach_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                               help='Automatically answer and skip operational warnings.')
 
     @with_argparser(detach_parser)
     def do_detach(self, args):
@@ -1820,6 +1854,8 @@ cluster. It is using SSH connectivity to the NVMesh managers, clients and target
                              help='Stop the NVMesh services in parallel.')
     stop_parser.add_argument('-s', '--server', nargs='+', required=False,
                              help='Specify a single or a space separated list of managers, targets or clients.')
+    stop_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                             help='Automatically answer and skip operational warnings.')
 
     @with_argparser(stop_parser)
     def do_stop(self, args):
@@ -1830,16 +1866,43 @@ E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
         user.get_api_user()
         action = "stop"
         if args.nvmesh_object == 'target':
-            self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
-                                               args.parallel, (False if args.graceful[0] == "False" else True)))
+            if args.yes:
+                self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
+                                                   args.parallel, (False if args.graceful[0] == "False" else True)))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_target']).lower():
+                    self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
+                                                       args.parallel, (False if args.graceful[0] == "False" else True)))
+                else:
+                    return
         elif args.nvmesh_object == 'client':
-            self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
+            if args.yes:
+                self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
+                                                   args.parallel, False))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_client']).lower():
+                    self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
+                                                       args.parallel, False))
+                else:
+                    return
+        elif args.nvmesh_object == 'manager':
+            if args.yes:
+                self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
                                                args.parallel, False))
-        elif args.nvmesh_object == 'managers':
-            self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_manager']).lower():
+                    self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
+                                                       args.parallel, False))
+                else:
+                    return
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.detail, action, args.prefix)
+            if args.yes:
+                manage_cluster(args.detail, action, args.prefix)
+            else:
+                if "y" in raw_input(WARNINGS['stop_cluster']).lower():
+                    manage_cluster(args.detail, action, args.prefix)
+                else:
+                    return
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.server, action)
 
@@ -1893,6 +1956,8 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
                                 help='Restart the NVMesh services on the hosts/servers in parallel.')
     restart_parser.add_argument('-s', '--server', nargs='+', required=False,
                                 help='Specify a single or a space separated list of servers.')
+    restart_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                                help='Automatically answer and skip operational warnings.')
 
     @with_argparser(restart_parser)
     def do_restart(self, args):
@@ -1966,7 +2031,7 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
                 mgmt.save_management_server(args.server)
                 mgmt.server = args.server[0]
 
-    def do_license(self, args):
+    def do_license(self):
         """Shows the licensing details, terms and conditions. """
         package_dir = os.path.dirname(os.path.abspath(__file__))
         license_file_path = os.path.join(package_dir, 'LICENSE.txt')

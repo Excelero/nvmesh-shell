@@ -47,7 +47,8 @@ class Api:
                        "API action: POST %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
             logger.log("debug", "API payload: %s" % self.payload if '/login' not in self.endpoint else 'login')
             self.response = self.session.post(
-                '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload, timeout=self.timeout)
+                '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload,
+                timeout=self.timeout)
             logger.log("debug", "API response: %s" % self.response)
             logger.log(
                 "debug",
