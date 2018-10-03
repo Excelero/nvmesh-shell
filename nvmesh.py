@@ -40,7 +40,7 @@ from multiprocessing import Pool
 import dateutil.parser
 import re
 
-version = '39'
+version = '41'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -209,8 +209,10 @@ class UserCredentials:
         self.SSH_password = None
         self.API_user_name = None
         self.API_password = None
+        self.SSH_sudo = None
         self.SSH_secrets_file = os.path.expanduser('~/.nvmesh_shell_secrets')
         self.API_secrets_file = os.path.expanduser('~/.nvmesh_api_secrets')
+        self.SSH_sudo_file = os.path.expanduser('~/.nvmesh_shell_sudo')
         self.SSH_secrets = None
         self.API_secrets = None
 
@@ -232,9 +234,15 @@ class UserCredentials:
             secrets.write(' '.join([self.API_user_name, base64.b64encode(self.API_password)]))
             secrets.close()
 
+    def save_ssh_sudo(self, is_sudo):
+        sudo = open(self.SSH_sudo_file, 'w')
+        sudo.write(str(is_sudo))
+        sudo.close()
+
     def get_ssh_user(self):
         try:
             self.SSH_secrets = open(self.SSH_secrets_file, 'r').read().split(' ')
+            self.SSH_sudo = open(self.SSH_sudo_file, 'r').read().strip()
         except Exception, e:
             logger.log('critical', e.message)
             formatter.print_red(e.message)
@@ -328,7 +336,12 @@ class SSHRemoteOperations:
         try:
             self.ssh.connect(host, username=self.ssh_user_name, password=self.ssh_password, timeout=5,
                              port=self.ssh_port)
+            if user.SSH_sudo:
+                remote_command = " ".join(["sudo -S -p ''", remote_command])
             stdin, stdout, stderr = self.ssh.exec_command(remote_command)
+            if user.SSH_sudo:
+                stdin.write(user.SSH_password + "\n")
+                stdin.flush()
             self.remote_command_return = stdout.channel.recv_exit_status(), stdout.read().strip(), stderr.read().strip()
             if self.remote_command_return[0] == 0:
                 return self.remote_command_return[0], self.remote_command_return[1]
@@ -346,7 +359,12 @@ class SSHRemoteOperations:
         try:
             self.ssh.connect(host.strip(), username=user.SSH_user_name, password=user.SSH_password, timeout=5,
                              port=self.ssh_port)
+            if user.SSH_sudo:
+                remote_command = " ".join(["sudo -S -p ''", remote_command])
             stdin, stdout, stderr = self.ssh.exec_command(remote_command)
+            if user.SSH_sudo:
+                stdin.write(user.SSH_password + "\n")
+                stdin.flush()
             return stdout.channel.recv_exit_status(), "Success - OK"
         except Exception, e:
             logger.log("critical", e)
@@ -606,13 +624,13 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
             remaining_dirty_bits = 0
             name = formatter.bold(volume["name"])
             if volume["health"] == "healthy":
-                health = formatter.green(formatter.bold("Healthy ")) + u'\u2705'
+                health = formatter.green(formatter.bold("Healthy"))
                 status = formatter.green(formatter.bold(volume["status"].capitalize()))
             elif volume["health"] == "alarm":
-                health = formatter.yellow(formatter.bold("Alarm !!"))
+                health = formatter.yellow(formatter.bold("Alarm"))
                 status = formatter.yellow(formatter.bold(volume["status"].capitalize()))
             else:
-                health = formatter.red(formatter.bold("Critical ")) + u'\u274C'
+                health = formatter.red(formatter.bold("Critical"))
                 status = formatter.red(formatter.bold(volume["status"].capitalize()))
 
             if volumes is not None and volume['name'] not in volumes:
@@ -1488,8 +1506,8 @@ def show_drives(details, targets, tsv):
             return formatter.print_tsv(drive_list)
         if details:
             return format_smart_table(sorted(drive_list),
-                                      ['Vendor', 'Model', 'Drive ID', 'Size', 'Status', 'BS', 'Wear',
-                                       'Target', 'Numa', 'PCI root', 'SubQ'])
+                                      ['Vendor', 'Model', 'Drive ID', 'Size', 'Status', 'Sector Size', 'Wear',
+                                       'Target', 'Numa', 'PCI root', 'QPs'])
         else:
             return format_smart_table(sorted(drive_list), ['Vendor', 'Model', 'Drive ID', 'Size', 'Status', 'Target'])
 
@@ -1522,7 +1540,7 @@ class NvmeshShell(Cmd):
     show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     show_parser.add_argument('nvmesh_object', choices=['cluster', 'target', 'client', 'volume', 'drive', 'manager',
                                                        'sshuser', 'apiuser', 'vpg', 'driveclass', 'targetclass',
-                                                       'host', 'log', 'drivemodel', 'version'],
+                                                       'host', 'log', 'drivemodel', 'version', 'license'],
                              help='Define/specify the scope or the NVMesh object you want to list or view.')
     show_parser.add_argument('-a', '--all', required=False, action='store_const', const=True, default=False,
                              help='Show all logs. Per default only alerts are shown.')
@@ -1559,7 +1577,7 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
         elif args.nvmesh_object == 'volume':
             self.poutput(show_volumes(args.detail, args.tsv, args.json, args.volume, args.short_name, args.layout))
         elif args.nvmesh_object == 'sshuser':
-            self.poutput(user.get_ssh_user())
+            self.poutput(user.get_ssh_user()[0])
         elif args.nvmesh_object == 'apiuser':
             self.poutput(user.get_api_user())
         elif args.nvmesh_object == 'manager':
@@ -1582,6 +1600,10 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
             self.poutput(show_drive_models(args.detail))
         elif args.nvmesh_object == 'version':
             self.poutput(version)
+        elif args.nvmesh_object == 'license':
+            package_dir = os.path.dirname(os.path.abspath(__file__))
+            license_file_path = os.path.join(package_dir, 'LICENSE.txt')
+            self.ppaged(open(license_file_path, 'r').read())
 
     add_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     add_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'driveclass', 'targetclass'],
@@ -2009,11 +2031,15 @@ persistently. Please note that in its current version allows to set only one NVM
 list it will use the first manager name of that list.
 E.g. 'define apiuser' will set the NVMesh API user name to be used for all the operations involving the API"""
         if args.nvmesh_object == 'sshuser':
-            if args.user is None:
-                user.SSH_user_name = raw_input("Please provide the root level SSH user name: ")
+            if 'y' in raw_input("Do you require sudo for SSH remote command execution? [Yes|No] :"):
+                user.save_ssh_sudo(True)
+                user.SSH_user_name = raw_input("Please provide the user name to be used for SSH connectivity: ")
+                user.SSH_password = getpass.getpass("Please provide the SSH password: ")
+                user.save_ssh_user()
             else:
-                user.SSH_user_name = args.user[0]
-            if args.persistent is True:
+                user.save_ssh_sudo(False)
+                user.SSH_user_name = raw_input("Please provide the root level SSH user name: ")
+                user.SSH_password = getpass.getpass("Please provide the SSH password: ")
                 user.save_ssh_user()
         elif args.nvmesh_object == 'apiuser':
             if args.user is None:
@@ -2040,11 +2066,6 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
                 mgmt.save_management_server(args.server)
                 mgmt.server = args.server[0]
 
-    def do_license(self):
-        """Shows the licensing details, terms and conditions. """
-        package_dir = os.path.dirname(os.path.abspath(__file__))
-        license_file_path = os.path.join(package_dir, 'LICENSE.txt')
-        self.ppaged(open(license_file_path, 'r').read())
 
     runcmd_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     runcmd_parser.add_argument('scope', choices=['client', 'target', 'manager', 'cluster', 'host'],
