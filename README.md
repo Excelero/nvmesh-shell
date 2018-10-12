@@ -32,4 +32,4 @@ tool if required.
 
 Example: `nvmesh show volumes -d`
 
-Please find more details and a user guide here:
+Please find more details and a user guide here: https://github.com/Excelero/nvmesh-shell/blob/master/Shell-CLI%20Documentation.pdf
