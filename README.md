@@ -21,15 +21,15 @@ Install the nvmesh-shell package:
 
 **Usage**
 
-On you terminal, type `nvmesh-shell` to start the interactive shell
+On you terminal, type `nvmesh` to start the interactive shell
 session. For more help and a list of available sub-commands type `help`
 or `help <sub-command>`.
 
-Example: `nvmesh shell # help list`
+Example: `nvmesh# show volume -d`
 
 Alternatively, you can use it and interact with it like a regular CLI
 tool if required.
 
-Example: `nvmesh-shell list volumes -d`
+Example: `nvmesh show volumes -d`
 
-
+Please find more details and a user guide here:
