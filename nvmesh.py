@@ -917,10 +917,11 @@ volume to the NVMesh cluster."""
                 print(formatter.yellow(
                     "Raid level information missing! Use the -r argument to set the raid level."))
                 return
-            if args.raid_level[0] != '1' or 'lvm' and args.stripe_width is None:
-                print(formatter.yellow(
-                    "Stripe width information missing! Use the -w argument to set the stripe width."))
-                return
+            if args.vpg is None:
+                if '0' in args.raid_level[0]:
+                    print(formatter.yellow(
+                            "Stripe width information missing! Use the -w argument to set the stripe width."))
+                    return
             if args.count is not None:
                 if int(args.count[0]) > 100:
                     self.poutput(formatter.yellow("Count too high! The max is 100."))
@@ -930,15 +931,35 @@ volume to the NVMesh cluster."""
                     while count <= int(args.count[0]):
                         name = "".join([args.name[0], "%03d" % (count,)])
                         count = count + 1
-                        self.poutput(manage_volume('create', name, args.size, args.description, args.drive_class,
-                                                   args.target_class, args.limit_by_target, args.limit_by_disk,
+                        self.poutput(manage_volume('create',
+                                                   name,
+                                                   args.size,
+                                                   args.description,
+                                                   args.drive_class,
+                                                   args.target_class,
+                                                   args.limit_by_target,
+                                                   args.limit_by_disk,
                                                    args.domain,
-                                                   args.raid_level, args.stripe_width, args.number_of_mirrors,
-                                                   args.vpg, None))
+                                                   args.raid_level,
+                                                   args.stripe_width,
+                                                   args.number_of_mirrors,
+                                                   args.vpg,
+                                                   None))
             else:
-                self.poutput(manage_volume('create', args.name[0], args.size, args.description, args.drive_class,
-                                           args.target_class, args.limit_by_target, args.limit_by_disk, args.domain,
-                                           args.raid_level, args.stripe_width, args.number_of_mirrors, args.vpg, None))
+                self.poutput(manage_volume('create',
+                                           args.name[0],
+                                           args.size,
+                                           args.description,
+                                           args.drive_class,
+                                           args.target_class,
+                                           args.limit_by_target,
+                                           args.limit_by_disk,
+                                           args.domain,
+                                           args.raid_level,
+                                           args.stripe_width,
+                                           args.number_of_mirrors,
+                                           args.vpg,
+                                           None))
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
