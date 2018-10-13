@@ -498,7 +498,7 @@ class SSHRemoteOperations:
         except Exception, e:
             cli_exit.error = True
             logging.critical(e.message)
-            print formatter.print_red("Couldn't execute command %s on %s! %s" % (remote_command, host, e.message))
+            print formatter.red("Couldn't execute command %s on %s! %s" % (remote_command, host, e.message))
 
     def execute_remote_command(self, host, remote_command):
         try:
@@ -918,7 +918,7 @@ volume to the NVMesh cluster."""
                     "Raid level information missing! Use the -r argument to set the raid level."))
                 return
             if args.vpg is None:
-                if '0' in args.raid_level[0]:
+                if '0' in args.raid_level[0] and args.stripe_width is None:
                     print(formatter.yellow(
                             "Stripe width information missing! Use the -w argument to set the stripe width."))
                     return
@@ -1327,7 +1327,9 @@ Excample: runcmd managers -c systemctl status mongod"""
                 process_pool.close()
             else:
                 for host in host_list:
-                    command_return_list.append([host, ssh.return_remote_command_std_output(host, command_line)])
+                    command_return = ssh.return_remote_command_std_output(host, command_line)
+                    if command_return:
+                        command_return_list.append([host, command_return])
             output = []
             for command_return in command_return_list:
                 if command_return[1][0] != 0:
@@ -2205,25 +2207,29 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
                 ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s stop" % scope)
             elif action == "restart":
                 ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s restart" % scope)
-            if ssh_return[0] == 0:
-                if details is True:
-                    output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.green('OK')]))
-                    if prefix is True:
-                        output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
+            if ssh_return:
+                if ssh_return[0] == 0:
+                    if details is True:
+                        output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.green('OK')]))
+                        if prefix is True:
+                            output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
+                        else:
+                            output.append((ssh_return[1] + "\n"))
                     else:
-                        output.append((ssh_return[1] + "\n"))
+                        output.append(" ".join([server, action.capitalize(), formatter.green('OK')]))
                 else:
-                    output.append(" ".join([server, action.capitalize(), formatter.green('OK')]))
+                    cli_exit.error = True
+                    if details is True:
+                        output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.red('Failed')]))
+                        if prefix is True:
+                            output.append(formatter.add_line_prefix(server, (ssh_return[1] if not None else None), True))
+                        else:
+                            output.append((ssh_return[1] if not None else None + "\n"))
+                    else:
+                        output.append(" ".join([server, action.capitalize(), formatter.red('Failed')]))
             else:
                 cli_exit.error = True
-                if details is True:
-                    output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.red('Failed')]))
-                    if prefix is True:
-                        output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
-                    else:
-                        output.append((ssh_return[1] + "\n"))
-                else:
-                    output.append(" ".join([server, action.capitalize(), formatter.red('Failed')]))
+                output.append(" ".join([server, action.capitalize(), formatter.red('Failed')]))
         return "\n".join(output)
 
 
@@ -2328,9 +2334,13 @@ def run_parallel_ssh_command(argument):
     ssh = SSHRemoteOperations()
     try:
         output = ssh.return_remote_command_std_output(argument[0], argument[1])
-        if output[0] != 0:
+        if output:
+            if output[0] != 0:
+                cli_exit.error = True
+            return argument[0], output
+        else:
             cli_exit.error = True
-        return argument[0], output
+            return argument[0], [1, "Failed on %s" % argument[0]]
     except Exception, e:
         print(formatter.red("Error: " + e.message))
         logging.critical(e.message)
