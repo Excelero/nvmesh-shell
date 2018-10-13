@@ -21,7 +21,7 @@
 # Email:         andreas@excelero.com
 
 import logging
-from cmd2 import Cmd, with_argparser
+from cmd2 import Cmd, with_argparser, with_category, categorize
 import argparse
 import json
 import gnureadline as readline
@@ -40,7 +40,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '43'
+__version__ = '44'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -738,14 +738,14 @@ class NvmeshShell(Cmd):
 
     def __init__(self):
         Cmd.__init__(self, use_ipython=True)
-        self.exit_code = None
+        self.hidden_commands = ['py', 'ipy', 'pyscript', '_relative_load', 'eof', 'eos']
 
     prompt = "\033[1;34mnvmesh #\033[0m "
     show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     show_parser.add_argument('nvmesh_object', choices=['cluster', 'target', 'client', 'volume', 'drive', 'manager',
                                                        'sshuser', 'apiuser', 'vpg', 'driveclass', 'targetclass',
                                                        'host', 'log', 'drivemodel', 'version', 'license'],
-                             help='Define/specify the scope or the NVMesh object you want to list or view.')
+                             help='The NVMesh object you want to list or view.')
     show_parser.add_argument('-a', '--all', required=False, action='store_const', const=True, default=False,
                              help='Show all logs. Per default only alerts are shown.')
     show_parser.add_argument('-C', '--Class', nargs='+', required=False,
@@ -768,11 +768,12 @@ class NvmeshShell(Cmd):
                              help='View a single or a list of NVMesh volume provisioning groups.')
 
     @with_argparser(show_parser)
+    @with_category("NVMesh Resource Management")
     def do_show(self, args):
-        """List and view specific Nvmesh objects and its properties.
-The 'list sub-command allows output in a table, tabulator separated value or JSON format. E.g 'list targets' will list
-all targets. In case you want to see the properties of only one or just a few you need to use the '-s' or '--server'
-option to specify single or a list of servers/targets. E.g. 'list targets -s target1 target2'"""
+        """List and view specific Nvmesh objects and its properties. The 'list sub-command allows output in a table,
+        tabulator separated value or JSON format. E.g 'show target' will list all targets. In case you want to see the
+        properties of only one or just a few you need to use the '-s' or '--server' option to specify single or a list
+        of servers/targets. E.g. 'list targets -s target1 target2'"""
         user.get_api_user()
         if args.nvmesh_object == 'target':
             self.poutput(show_targets(args.detail, args.tsv, args.json, args.server, args.short_name))
@@ -867,10 +868,11 @@ option to specify single or a list of servers/targets. E.g. 'list targets -s tar
                                  'Some valid input formats samples: xGB, x GB, x gigabyte, x GiB or xG')
 
     @with_argparser(add_parser)
+    @with_category("NVMesh Resource Management")
     def do_add(self, args):
-        """The 'add' sub-command will let you add nvmesh objects to your cluster or nvmesh-shell runtime environment.
-E.g. 'add hosts' will add host entries to your nvmesh-shell environment while 'add volume' will create and add a new
-volume to the NVMesh cluster."""
+        """The 'add' sub-command will let you add nvmesh objects to your cluster. E.g. 'add host' will add host
+        entries to your nvmesh-shell environment while 'add volume' will create and add a new volume to the NVMesh
+        cluster."""
         action = "add"
         if args.nvmesh_object == 'host':
             hosts.manage_hosts(action, args.server, False)
@@ -979,10 +981,11 @@ volume to the NVMesh cluster."""
                                help='Automatically answer and skip operational warnings.')
 
     @with_argparser(delete_parser)
+    @with_category("NVMesh Resource Management")
     def do_delete(self, args):
-        """The 'delete' sub-command will let you delete nvmesh objects in your cluster or nvmesh-shell
-runtime environment. E.g. 'delete hosts' will delete host entries in your nvmesh-shell environment and 'delete volume'
-will delete NVMesh volumes in your NVMesh cluster."""
+        """The 'delete' sub-command will let you delete nvmesh objects in your cluster or nvmesh-shell runtime
+        environment. E.g. 'delete host' will delete host entries in your nvmesh-shell environment and 'delete volume'
+        will delete NVMesh volumes in your NVMesh cluster."""
         action = "delete"
         if args.nvmesh_object == 'host':
             hosts.manage_hosts(action, args.server, False)
@@ -1030,6 +1033,7 @@ will delete NVMesh volumes in your NVMesh cluster."""
                                help='Specify a single volume or a space separated list of volumes.')
 
     @with_argparser(attach_parser)
+    @with_category("NVMesh Resource Management")
     def do_attach(self, args):
         """The 'attach' sub-command will let you attach NVMesh volumes to the clients in your NVMesh cluster."""
         if args.client[0] == 'all':
@@ -1052,6 +1056,7 @@ will delete NVMesh volumes in your NVMesh cluster."""
                                help='Automatically answer and skip operational warnings.')
 
     @with_argparser(detach_parser)
+    @with_category("NVMesh Resource Management")
     def do_detach(self, args):
         """The 'detach' sub-command will let you detach NVMesh volumes in your NVMesh cluster."""
         if args.client[0] == 'all':
@@ -1079,10 +1084,11 @@ will delete NVMesh volumes in your NVMesh cluster."""
                               help='Specify a single or a space separated list of managers, targets or clients.')
 
     @with_argparser(check_parser)
+    @with_category("NVMesh Resource Management")
     def do_check(self, args):
         """The 'check' sub-command checks and let you list the status of the actual NVMesh services running in your
-cluster. It is using SSH connectivity to the NVMesh managers, clients and targets to verify the service status. E.g.
-'check targets' will check the NVMesh target services throughout the cluster."""
+        cluster. It is using SSH connectivity to the NVMesh managers, clients or targets to verify the service status.
+        E.g.'check target' will check the NVMesh target services throughout the cluster."""
         user.get_ssh_user()
         user.get_api_user()
         action = "check"
@@ -1118,10 +1124,11 @@ cluster. It is using SSH connectivity to the NVMesh managers, clients and target
                              help='Automatically answer and skip operational warnings.')
 
     @with_argparser(stop_parser)
+    @with_category("NVMesh Resource Management")
     def do_stop(self, args):
-        """The 'stop' sub-command will stop the selected NVMesh services on all managers, targets and clients.
-Or it will stop the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
-E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
+        """The 'stop' sub-command will stop the selected NVMesh services on managers, targets or clients. Or it will
+        stop the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services. E.g. 'stop client' will
+        stop all the NVMesh clients throughout the cluster."""
         user.get_ssh_user()
         user.get_api_user()
         action = "stop"
@@ -1181,10 +1188,11 @@ E.g. 'stop clients' will stop all the NVMesh clients throughout the cluster."""
                               help='Specify a single or a space separated list of servers.')
 
     @with_argparser(start_parser)
+    @with_category("NVMesh Resource Management")
     def do_start(self, args):
-        """The 'start' sub-command will start the selected NVMesh services on all managers, targets and clients.
-Or it will start the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
-E.g. 'start cluster' will start all the NVMesh services throughout the cluster."""
+        """The 'start' sub-command will start the selected NVMesh services on managers, targets or clients. Or it will
+        start the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services. E.g. 'start cluster'
+        will start all the NVMesh services throughout the cluster."""
         user.get_ssh_user()
         user.get_api_user()
         action = "start"
@@ -1222,10 +1230,11 @@ E.g. 'start cluster' will start all the NVMesh services throughout the cluster."
                                 help='Automatically answer and skip operational warnings.')
 
     @with_argparser(restart_parser)
+    @with_category("NVMesh Resource Management")
     def do_restart(self, args):
-        """The 'restart' sub-command will restart the selected NVMesh services on all managers, targets and clients.
-Or it will restart the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
-E.g. 'restart managers' will restart the NVMesh management service."""
+        """The 'restart' sub-command will restart the selected NVMesh services on managers, targets or clients. Or it
+        will restart the entire NVMesh cluster. It uses SSH connectivity to manage the NVMesh services.
+        E.g. 'restart manager' will restart the NVMesh management service."""
         user.get_ssh_user()
         user.get_api_user()
         action = 'restart'
@@ -1249,11 +1258,11 @@ E.g. 'restart managers' will restart the NVMesh management service."""
                                help='Specify the NVMesh shell runtime variable you want to define.')
 
     @with_argparser(define_parser)
+    @with_category("NVMesh Resource Management")
     def do_define(self, args):
-        """The 'define' sub-command defines/sets the shell runtime variables. It can be used to set them temporarily or
-persistently. Please note that in its current version allows to set only one NVMesh manager. If you try to provide a
-list it will use the first manager name of that list.
-E.g. 'define apiuser' will set the NVMesh API user name to be used for all the operations involving the API"""
+        """The 'define' sub-command defines/sets the shell runtime variables as NVMesh management servers and user
+        credentials to be used. E.g. 'define apiuser' will set the NVMesh API user name to be used for all the
+        operations involving the API"""
         if args.nvmesh_object == 'sshuser':
             user.SSH_user_name = raw_input("Please provide the user name to be used for SSH connectivity: ")
             user.SSH_password = getpass.getpass("Please provide the SSH password: ")
@@ -1286,10 +1295,10 @@ E.g. 'define apiuser' will set the NVMesh API user name to be used for all the o
                                help='Specify list of servers and or hosts.')
 
     @with_argparser(runcmd_parser)
+    @with_category("NVMesh Resource Management")
     def do_runcmd(self, args):
         """Run a remote shell command across the whole NVMesh cluster, or just the targets, clients, managers or a list
-        of selected servers and hosts.
-Excample: runcmd managers -c systemctl status mongod"""
+        of selected servers and hosts. Excample: runcmd manager -c systemctl status mongod"""
         user.get_ssh_user()
         user.get_api_user()
         self.poutput(self.run_command(args.command, args.scope, args.prefix, args.parallel, args.server))
@@ -1360,9 +1369,10 @@ Excample: runcmd managers -c systemctl status mongod"""
                                 help='Specify a server or a list of servers and/or hosts.')
 
     @with_argparser(testssh_parser)
+    @with_category("NVMesh Resource Management")
     def do_testssh(self, args):
         """Test the SSH connectivity to all, a list of, or individual servers and hosts.
-Excample: testssh -s servername"""
+        Excample: testssh -s servername"""
         ssh = SSHRemoteOperations()
         user.get_ssh_user()
         ssh.test_ssh_connection(args.server)
@@ -1402,6 +1412,7 @@ Excample: testssh -s servername"""
                                help='Optional - Limit volume allocation to specific drive classes.')
 
     @with_argparser(update_parser)
+    @with_category("NVMesh Resource Management")
     def do_update(self, args):
         """Update and edit an existing NVMesh volume, driveclass or targetclass."""
         if get_api_ready() == 0:
