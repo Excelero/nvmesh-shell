@@ -40,7 +40,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '44'
+__version__ = '45'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -63,7 +63,8 @@ WARNINGS = {
     'stop_nvmesh_client': 'This operation will HALT ALL I/O TO ALL VOLUMES in use by THE SELECTED CLIENT. It is recommended that all applications and/or file systems supported by NVMesh volumes on the clients be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: ',
     'stop_nvmesh_target': 'This operation will make any UNPROTECTED VOLUMES supported by drives in the selected targets IMMEDIATELY UNAVAILABLE. Any PROTECTED VOLUMES will become IMMEDIATELY DEGRADED until services are restarted or volumes are rebuilt to alternate drives in another target.\nDo you want to continue? [Yes|No]: ',
     'stop_nvmesh_manager': 'This operation will halt the running instance of NVMesh Management on the selected servers. If Management is deployed as a stand-alone instance, or this is the last running HA instance, further changes to NVMesh cluster volumes, clients, and targets will be unavailable until Management is restarted on at least one node.\nDo you want to continue? [Yes|No]: ',
-    'stop_cluster': 'ALL NVMesh resources will become UNAVAILABLE and ALL IO will stop. It is recommended that all applications and/or file systems using any resource out of this cluster be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: '
+    'stop_cluster': 'ALL NVMesh resources will become UNAVAILABLE and ALL IO will stop. It is recommended that all applications and/or file systems using any resource out of this cluster be stopped/un-mounted prior to issuing the command.\nDo you want to continue? [Yes|No]: ',
+    'evict_drive': 'This operation will make any UNPROTECTED VOLUMES supported by this drive IMMEDIATELY UNAVAILABLE. Any PROTECTED VOLUMES will become IMMEDIATELY DEGRADED.\nDo you want to continue? [Yes|No]: '
 }
 
 __license__ = r"""GNU GENERAL PUBLIC LICENSE
@@ -210,7 +211,7 @@ logging.basicConfig(filename=os.path.expanduser('~/.nvmeshcli.log'),
 class ArgsUsageOutputFormatter(argparse.HelpFormatter):
     def _format_usage(self, usage, actions, groups, prefix):
         if prefix is None:
-            prefix = 'usage: '
+            prefix = 'Usage: '
         if usage is not None:
             usage = usage % dict(prog=self._prog)
         elif usage is None and not actions:
@@ -541,7 +542,7 @@ class Api:
         self.user_name = None
         self.password = None
         self.endpoint = None
-        self.payload = {}
+        self.payload = None
         self.session = requests.session()
         self.response = None
         self.session.verify = False
@@ -555,12 +556,16 @@ class Api:
                 logging.debug(
                            "API action: POST %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
                 logging.debug("API payload: %s" % self.payload if '/login' not in self.endpoint else 'login')
-                self.response = self.session.post(
-                    '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload,
-                    timeout=self.timeout)
-                logging.debug("API response: %s" % self.response)
-                logging.debug("API response content is: %s"
-                              % self.response.content if '/login' not in self.endpoint else 'login')
+                if self.payload:
+                    self.response = self.session.post(
+                        '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload,
+                        timeout=self.timeout)
+                else:
+                    self.response = self.session.post(
+                        '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), timeout=self.timeout)
+                    logging.debug("API response: %s" % self.response)
+                    logging.debug("API response content is: %s"
+                                  % self.response.content if '/login' not in self.endpoint else 'login')
                 return self.response.content
             elif self.action == "get":
                 logging.debug("API action: GET %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
@@ -712,6 +717,18 @@ class Api:
     def get_managers(self):
         self.endpoint = '/managementCluster/all/0/0'
         self.action = 'get'
+        return self.execute_api_call()
+
+    def evict_drive(self, payload):
+        self.payload = payload
+        self.endpoint = '/servers/evictDiskByDiskIds'
+        self.action = 'post'
+        return self.execute_api_call()
+
+    def delete_drive(self, drive):
+        self.payload = None
+        self.endpoint = '/disks/delete/%s' % drive
+        self.action = 'post'
         return self.execute_api_call()
 
 
@@ -965,20 +982,22 @@ class NvmeshShell(Cmd):
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
-    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'driveclass', 'targetclass'],
-                               help='Delete hosts, servers, drive classes and target classes.')
+    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'drive', 'driveclass', 'targetclass'],
+                               help='Delete hosts, servers, drives, drive classes, and target classes.')
     delete_parser.add_argument('-s', '--server', nargs='+',
                                help='Specify a single server or a list of servers.')
     delete_parser.add_argument('-t', '--target-class', nargs='+',
                                help='Specify a single target class or a space separated list of target classes.')
     delete_parser.add_argument('-d', '--drive-class', nargs='+',
                                help='Specify a single drive class or a space separated list of drive classes.')
+    delete_parser.add_argument('-D', '--drive', nargs='+',
+                               help='The drive ID of the drive to be deleted in the NVMesh cluster.')
     delete_parser.add_argument('-v', '--volume', nargs='+',
                                help='Specify a single volume or a space separated list of volumes.')
     delete_parser.add_argument('-f', '--force', required=False, action='store_const', const=True, default=False,
                                help='Use this flag to forcefully delete the volume/s.')
     delete_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
-                               help='Automatically answer and skip operational warnings.')
+                               help="Automatically answer 'yes' and skip operational warnings.")
 
     @with_argparser(delete_parser)
     @with_category("NVMesh Resource Management")
@@ -1024,6 +1043,12 @@ class NvmeshShell(Cmd):
                                                None, None, None, args.force))
                 else:
                     return
+        elif args.nvmesh_object == 'drive':
+            if args.drive:
+                self.poutput(manage_drive('delete', args.drive[0]))
+            else:
+                cli_exit.error = True
+                print(formatter.yellow("Use the -D/--drive argument to specify the drive to be deleted."))
         cli_exit.validate_exit()
 
     attach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1053,7 +1078,7 @@ class NvmeshShell(Cmd):
     detach_parser.add_argument('-v', '--volume', nargs='+', required=True,
                                help='Specify a single volume or a space separated list of volumes.')
     detach_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
-                               help='Automatically answer and skip operational warnings.')
+                               help="Automatically answer 'yes' and skip operational warnings.")
 
     @with_argparser(detach_parser)
     @with_category("NVMesh Resource Management")
@@ -1121,7 +1146,7 @@ class NvmeshShell(Cmd):
     stop_parser.add_argument('-s', '--server', nargs='+', required=False,
                              help='Specify a single or a space separated list of managers, targets or clients.')
     stop_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
-                             help='Automatically answer and skip operational warnings.')
+                             help="Automatically answer 'yes' and skip operational warnings.")
 
     @with_argparser(stop_parser)
     @with_category("NVMesh Resource Management")
@@ -1227,7 +1252,7 @@ class NvmeshShell(Cmd):
     restart_parser.add_argument('-s', '--server', nargs='+', required=False,
                                 help='Specify a single or a space separated list of servers.')
     restart_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
-                                help='Automatically answer and skip operational warnings.')
+                                help="Automatically answer 'yes' and skip operational warnings.")
 
     @with_argparser(restart_parser)
     @with_category("NVMesh Resource Management")
@@ -1444,6 +1469,27 @@ class NvmeshShell(Cmd):
                 else:
                     self.poutput(update_drive_class(drive_class[0], args.drive, args.description, args.file))
         cli_exit.validate_exit()
+
+    evict_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    evict_parser.add_argument('-d', '--drive', nargs=1, required=True,
+                              help="The drive ID of the drive to evict.")
+    evict_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                              help="Automatically answer 'yes' and skip operational warnings.")
+
+    @with_argparser(evict_parser)
+    @with_category("NVMesh Resource Management")
+    def do_evict(self, args):
+        """Evict a drive in the NVMesh cluster."""
+        try:
+            if args.yes:
+                self.poutput(manage_drive('evict', args.drive[0]))
+            else:
+                if 'y' in raw_input(WARNINGS['evict_drive']):
+                    self.poutput(manage_drive('evict', args.drive[0]))
+        except Exception, e:
+            print(formatter.red("Error: " + e.message))
+            logging.critical(e.message)
+            cli_exit.error = True
 
 
 def get_api_ready():
@@ -2491,6 +2537,41 @@ def update_drive_class(drive_class, drives, description, file_path):
         output = " ".join([formatter.red('Failed'), "to update", drive_class["_id"]])
         cli_exit.error = True
         return output
+
+
+def manage_drive(action, drive):
+    get_api_ready()
+    if action == 'evict':
+        payload = {}
+        payload["diskID"] = str(drive)
+        api_payload = [payload]
+        api_return = json.loads(nvmesh.evict_drive(api_payload))
+        if api_return:
+            if api_return[0]['success']:
+                output = " ".join(["Drive", drive, "successfully evicted.", formatter.green("OK")])
+                return output
+            else:
+                cli_exit.error = True
+                output = " ".join(["Drive", drive, "not evicted!", formatter.red("Failed")])
+                return output
+        else:
+            cli_exit.error = True
+            output = " ".join(["Drive", drive, "not evicted!", formatter.red("Failed")])
+            return output
+    elif action == 'delete':
+        api_return = json.loads(nvmesh.delete_drive(drive))
+        if api_return:
+            if api_return[0]['success']:
+                output = " ".join(["Drive", drive, "successfully deleted.", formatter.green("OK")])
+                return output
+            else:
+                cli_exit.error = True
+                output = " ".join(["Drive", drive, "not deleted!", formatter.red("Failed")])
+                return output
+        else:
+            cli_exit.error = True
+            output = " ".join(["Drive", drive, "not deleted!", formatter.red("Failed")])
+            return output
 
 
 def manage_drive_class(action, class_list, drives, model, name, description, domains, file_path):
