@@ -40,7 +40,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '45'
+__version__ = '46'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -53,7 +53,8 @@ NVME_VENDORS = {
     '0x1344': 'Micron',
     '0x15b7': 'SanDisk',
     '0x1179': 'Toshiba',
-    '0x144D': 'Samsung'
+    '0x144d': 'Samsung',
+    '0x1bb1': 'Seagate'
 }
 
 WARNINGS = {
@@ -843,7 +844,7 @@ class NvmeshShell(Cmd):
         elif args.nvmesh_object == 'drivemodel':
             self.poutput(show_drive_models(args.detail))
         elif args.nvmesh_object == 'version':
-            self.poutput(__version__)
+            self.poutput(": ".join(["Nvmesh CLI version", __version__]))
         elif args.nvmesh_object == 'license':
             self.ppaged(__license__)
         cli_exit.validate_exit()
@@ -3007,8 +3008,13 @@ def show_drives(details, targets, tsv):
             else:
                 target_details = json.loads(nvmesh.get_server_by_id(target))
                 for disk in target_details['disks']:
-                    vendor = NVME_VENDORS.get(disk['Vendor'], disk['Vendor'])
+                    vendor = disk['Vendor'] if not disk['Vendor'] in NVME_VENDORS else NVME_VENDORS[disk['Vendor']]
                     status = u'\u2705' if disk["status"].lower() == "ok" else u'\u274C'
+                    if 'isOutOfService' in disk:
+                        in_service = formatter.red("No")
+                        status = "n/a"
+                    else:
+                        in_service = formatter.green("Yes")
                     if details:
                         drive_list.append([vendor,
                                            disk['Model'],
@@ -3016,6 +3022,7 @@ def show_drives(details, targets, tsv):
                                            humanfriendly.format_size((disk['block_size'] * disk['blocks']),
                                                                      binary=True),
                                            status,
+                                           in_service,
                                            humanfriendly.format_size(disk['block_size'], binary=True),
                                            " ".join([str(100 - int((disk['Available_Spare'].split("_")[0]))), "%"]),
                                            target,
@@ -3029,6 +3036,7 @@ def show_drives(details, targets, tsv):
                                            humanfriendly.format_size((disk['block_size'] * disk['blocks']),
                                                                      binary=True),
                                            status,
+                                           in_service,
                                            target])
         if tsv:
             return formatter.print_tsv(drive_list)
@@ -3039,6 +3047,7 @@ def show_drives(details, targets, tsv):
                                        'Drive ID',
                                        'Size',
                                        'Status',
+                                       'In Service',
                                        'Sector Size',
                                        'Wear',
                                        'Target',
@@ -3051,6 +3060,7 @@ def show_drives(details, targets, tsv):
                                                            'Drive ID',
                                                            'Size',
                                                            'Status',
+                                                           'In Service',
                                                            'Target'])
 
 

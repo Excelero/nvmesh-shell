@@ -30,7 +30,7 @@ with open(path.join(here, 'README.md')) as f:
 
 setup(
     name='nvmesh-shell',
-    version='45',
+    version='46',
     author='Excelero, Inc. - Andreas Krause',
     url='https://github.com/Excelero/nvmesh-shell',
     description='Excelero NVMesh interactive shell and cli tool.',
