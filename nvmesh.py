@@ -21,7 +21,7 @@
 # Email:         andreas@excelero.com
 
 import logging
-from cmd2 import Cmd, with_argparser, with_category, categorize
+from cmd2 import Cmd, with_argparser, with_category
 import argparse
 import json
 import gnureadline as readline
@@ -625,7 +625,7 @@ class Api:
         return self.execute_api_call()
 
     def get_logs(self, all_logs):
-        if all_logs is True:
+        if all_logs:
             self.endpoint = '/logs/all/0/0?filter={}&sort={"timestamp":-1}'
         else:
             self.endpoint = '/logs/alerts/0/0?filter={}&sort={"timestamp":-1}'
@@ -793,11 +793,23 @@ class NvmeshShell(Cmd):
         of servers/targets. E.g. 'list targets -s target1 target2'"""
         user.get_api_user()
         if args.nvmesh_object == 'target':
-            self.poutput(show_targets(args.detail, args.tsv, args.json, args.server, args.short_name))
+            self.poutput(show_targets(args.detail,
+                                      args.tsv,
+                                      args.json,
+                                      args.server,
+                                      args.short_name))
         elif args.nvmesh_object == 'client':
-            self.poutput(show_clients(args.tsv, args.json, args.server, args.short_name))
+            self.poutput(show_clients(args.tsv,
+                                      args.json,
+                                      args.server,
+                                      args.short_name))
         elif args.nvmesh_object == 'volume':
-            self.poutput(show_volumes(args.detail, args.tsv, args.json, args.volume, args.short_name, args.layout))
+            self.poutput(show_volumes(args.detail,
+                                      args.tsv,
+                                      args.json,
+                                      args.volume,
+                                      args.short_name,
+                                      args.layout))
         elif args.nvmesh_object == 'sshuser':
             self.poutput(user.get_ssh_user()[0])
         elif args.nvmesh_object == 'apiuser':
@@ -805,19 +817,29 @@ class NvmeshShell(Cmd):
         elif args.nvmesh_object == 'manager':
             self.poutput(show_manager())
         elif args.nvmesh_object == 'cluster':
-            self.poutput(show_cluster(args.tsv, args.json))
+            self.poutput(show_cluster(args.tsv,
+                                      args.json))
         elif args.nvmesh_object == 'vpg':
-            self.poutput(show_vpgs(args.tsv, args.json, args.vpg))
+            self.poutput(show_vpgs(args.tsv,
+                                   args.json,
+                                   args.vpg))
         elif args.nvmesh_object == 'driveclass':
-            self.poutput(show_drive_classes(args.detail, args.tsv, args.json, args.Class))
+            self.poutput(show_drive_classes(args.detail,
+                                            args.tsv,
+                                            args.json,
+                                            args.Class))
         elif args.nvmesh_object == 'targetclass':
-            self.poutput(show_target_classes(args.tsv, args.json, args.Class))
+            self.poutput(show_target_classes(args.tsv,
+                                             args.json,
+                                             args.Class))
         elif args.nvmesh_object == 'host':
             self.poutput("\n".join(hosts.manage_hosts("get", None, False)))
         elif args.nvmesh_object == 'log':
             self.ppaged(show_logs(args.all))
         elif args.nvmesh_object == 'drive':
-            self.poutput(show_drives(args.detail, args.server, args.tsv))
+            self.poutput(show_drives(args.detail,
+                                     args.server,
+                                     args.tsv))
         elif args.nvmesh_object == 'drivemodel':
             self.poutput(show_drive_models(args.detail))
         elif args.nvmesh_object == 'version':
@@ -860,8 +882,6 @@ class NvmeshShell(Cmd):
                                  '"show drivemodel -d" or "show drive -d" command!')
     add_parser.add_argument('-n', '--name', nargs=1, required=False,
                             help='Name of the volume, must be unique, will be the ID of the volume.')
-    add_parser.add_argument('-N', '--number-of-mirrors', nargs=1, required=False,
-                            help='Number of mirrors to use.')
     add_parser.add_argument('-O', '--classdomain', nargs='+', required=False,
                             help="Awareness domain/s information of the target or drive class. "
                                  "A domain has a scope and identifier component. "
@@ -892,10 +912,19 @@ class NvmeshShell(Cmd):
         cluster."""
         action = "add"
         if args.nvmesh_object == 'host':
-            hosts.manage_hosts(action, args.server, False)
+            hosts.manage_hosts(action,
+                               args.server,
+                               False)
         elif args.nvmesh_object == 'driveclass':
             if args.autocreate:
-                self.poutput(manage_drive_class("autocreate", None, None, None, None, None, None, None))
+                self.poutput(manage_drive_class("autocreate",
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None))
             else:
                 if args.name is None:
                     print formatter.yellow(
@@ -906,11 +935,22 @@ class NvmeshShell(Cmd):
                         "No drive model information specified. Use the -M argument to provide the drive model "
                         "information.")
                     return
-                self.poutput(manage_drive_class("save", None, args.drive, args.model, args.name, args.description,
-                                                args.classdomain, args.file))
+                self.poutput(manage_drive_class("save",
+                                                None,
+                                                args.drive,
+                                                args.model,
+                                                args.name,
+                                                args.description,
+                                                args.classdomain,
+                                                args.file))
         elif args.nvmesh_object == 'targetclass':
             if args.autocreate:
-                self.poutput(manage_target_class("autocreate", None, None, None, None, None))
+                self.poutput(manage_target_class("autocreate",
+                                                 None,
+                                                 None,
+                                                 None,
+                                                 None,
+                                                 None))
             else:
                 if args.name is None:
                     print formatter.yellow(
@@ -921,7 +961,11 @@ class NvmeshShell(Cmd):
                         "No target servers specified. use the -s argument to provide a space separated list of targets"
                         "to be used. At least one target must be defined.")
                     return
-                self.poutput(manage_target_class("save", None, args.name[0], args.server, args.description,
+                self.poutput(manage_target_class("save",
+                                                 None,
+                                                 args.name[0],
+                                                 args.server,
+                                                 args.description,
                                                  parse_domain_args(args.classdomain)))
         elif args.nvmesh_object == 'volume':
             if args.name is None:
@@ -961,7 +1005,6 @@ class NvmeshShell(Cmd):
                                                    args.domain,
                                                    args.raid_level,
                                                    args.stripe_width,
-                                                   args.number_of_mirrors,
                                                    args.vpg,
                                                    None))
             else:
@@ -976,7 +1019,6 @@ class NvmeshShell(Cmd):
                                            args.domain,
                                            args.raid_level,
                                            args.stripe_width,
-                                           args.number_of_mirrors,
                                            args.vpg,
                                            None))
         cli_exit.validate_exit()
@@ -1007,7 +1049,9 @@ class NvmeshShell(Cmd):
         will delete NVMesh volumes in your NVMesh cluster."""
         action = "delete"
         if args.nvmesh_object == 'host':
-            hosts.manage_hosts(action, args.server, False)
+            hosts.manage_hosts(action,
+                               args.server,
+                               False)
         elif args.nvmesh_object == 'targetclass':
             if args.target_class is None:
                 print(formatter.yellow(
@@ -1015,9 +1059,19 @@ class NvmeshShell(Cmd):
                     "or list of classes to be deleted."))
                 return
             if args.target_class[0] == 'all':
-                self.poutput(manage_target_class('delete', get_target_class_list(), None, None, None, None))
+                self.poutput(manage_target_class('delete',
+                                                 get_target_class_list(),
+                                                 None,
+                                                 None,
+                                                 None,
+                                                 None))
             else:
-                self.poutput(manage_target_class('delete', args.target_class, None, None, None, None))
+                self.poutput(manage_target_class('delete',
+                                                 args.target_class,
+                                                 None,
+                                                 None,
+                                                 None,
+                                                 None))
         elif args.nvmesh_object == 'driveclass':
             if args.drive_class is None:
                 print(formatter.yellow(
@@ -1025,9 +1079,23 @@ class NvmeshShell(Cmd):
                     "or list of classes to be deleted."))
                 return
             if args.drive_class[0] == 'all':
-                self.poutput(manage_drive_class('delete', get_drive_class_list(), None, None, None, None, None, None))
+                self.poutput(manage_drive_class('delete',
+                                                get_drive_class_list(),
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None))
             else:
-                self.poutput(manage_drive_class('delete', args.drive_class, None, None, None, None, None, None))
+                self.poutput(manage_drive_class('delete',
+                                                args.drive_class,
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None,
+                                                None))
 
         elif args.nvmesh_object == 'volume':
             if args.volume[0] == 'all':
@@ -1035,17 +1103,40 @@ class NvmeshShell(Cmd):
             else:
                 volume_list = args.volume
             if args.yes:
-                self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None, None,
-                                           None, None, args.force))
+                self.poutput(manage_volume('remove',
+                                           volume_list,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None))
             else:
                 if "y" in raw_input(WARNINGS['delete_volume']).lower():
-                    self.poutput(manage_volume('remove', volume_list, None, None, None, None, None, None, None, None,
-                                               None, None, None, args.force))
+                    self.poutput(manage_volume('remove',
+                                               volume_list,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None,
+                                               None))
                 else:
                     return
         elif args.nvmesh_object == 'drive':
             if args.drive:
-                self.poutput(manage_drive('delete', args.drive[0]))
+                self.poutput(manage_drive('delete',
+                                          args.drive[0]))
             else:
                 cli_exit.error = True
                 print(formatter.yellow("Use the -D/--drive argument to specify the drive to be deleted."))
@@ -1069,7 +1160,9 @@ class NvmeshShell(Cmd):
             volume_list = get_volume_list()
         else:
             volume_list = args.volume
-        self.poutput(attach_detach_volumes('attach', client_list, volume_list))
+        self.poutput(attach_detach_volumes('attach',
+                                           client_list,
+                                           volume_list))
         cli_exit.validate_exit()
 
     detach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1092,7 +1185,9 @@ class NvmeshShell(Cmd):
             volume_list = get_volume_list()
         else:
             volume_list = args.volume
-        self.poutput(attach_detach_volumes('detach', client_list, volume_list))
+        self.poutput(attach_detach_volumes('detach',
+                                           client_list,
+                                           volume_list))
         cli_exit.validate_exit()
 
     check_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1118,16 +1213,33 @@ class NvmeshShell(Cmd):
         user.get_api_user()
         action = "check"
         if args.nvmesh_object == 'target':
-            self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('target',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'client':
-            self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('client',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'manager':
-            self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('mgr',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.detail, action, args.prefix)
+            manage_cluster(args.detail,
+                           action,
+                           args.prefix)
         cli_exit.validate_exit()
 
     stop_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1159,40 +1271,72 @@ class NvmeshShell(Cmd):
         action = "stop"
         if args.nvmesh_object == 'target':
             if args.yes:
-                self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
+                self.poutput(manage_nvmesh_service('target',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
                                                    args.parallel, (False if args.graceful[0] == "False" else True)))
             else:
                 if "y" in raw_input(WARNINGS['stop_nvmesh_target']).lower():
-                    self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
+                    self.poutput(manage_nvmesh_service('target',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
                                                        args.parallel, (False if args.graceful[0] == "False" else True)))
                 else:
                     return
         elif args.nvmesh_object == 'client':
             if args.yes:
-                self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
-                                                   args.parallel, False))
+                self.poutput(manage_nvmesh_service('client',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
+                                                   args.parallel,
+                                                   False))
             else:
                 if "y" in raw_input(WARNINGS['stop_nvmesh_client']).lower():
-                    self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
-                                                       args.parallel, False))
+                    self.poutput(manage_nvmesh_service('client',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
+                                                       args.parallel,
+                                                       False))
                 else:
                     return
         elif args.nvmesh_object == 'manager':
             if args.yes:
-                self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix, args.parallel,
+                self.poutput(manage_nvmesh_service('mgr',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
+                                                   args.parallel,
                                                    False))
             else:
                 if "y" in raw_input(WARNINGS['stop_nvmesh_manager']).lower():
-                    self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
-                                                       args.parallel, False))
+                    self.poutput(manage_nvmesh_service('mgr',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
+                                                       args.parallel,
+                                                       False))
                 else:
                     return
         elif args.nvmesh_object == 'cluster':
             if args.yes:
-                manage_cluster(args.detail, action, args.prefix)
+                manage_cluster(args.detail,
+                               action,
+                               args.prefix)
             else:
                 if "y" in raw_input(WARNINGS['stop_cluster']).lower():
-                    manage_cluster(args.detail, action, args.prefix)
+                    manage_cluster(args.detail,
+                                   action,
+                                   args.prefix)
                 else:
                     return
         elif args.nvmesh_object == 'mcm':
@@ -1222,18 +1366,36 @@ class NvmeshShell(Cmd):
         user.get_api_user()
         action = "start"
         if args.nvmesh_object == 'target':
-            self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('target',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'client':
-            self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('client',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'manager':
-            self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('mgr',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.detail, action, args.prefix)
+            manage_cluster(args.detail,
+                           action,
+                           args.prefix)
         elif args.nvmesh_object == 'mcm':
-            manage_mcm(args.server, action)
+            manage_mcm(args.server,
+                       action)
         cli_exit.validate_exit()
 
     restart_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1264,18 +1426,35 @@ class NvmeshShell(Cmd):
         user.get_api_user()
         action = 'restart'
         if args.nvmesh_object == 'target':
-            self.poutput(manage_nvmesh_service('target', args.detail, args.server, action, args.prefix,
+            self.poutput(manage_nvmesh_service('target',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
                                                args.parallel, (False if args.graceful[0] == "False" else True)))
         elif args.nvmesh_object == 'client':
-            self.poutput(manage_nvmesh_service('client', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('client',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'manager':
-            self.poutput(manage_nvmesh_service('mgr', args.detail, args.server, action, args.prefix,
-                                               args.parallel, False))
+            self.poutput(manage_nvmesh_service('mgr',
+                                               args.detail,
+                                               args.server,
+                                               action,
+                                               args.prefix,
+                                               args.parallel,
+                                               False))
         elif args.nvmesh_object == 'mcm':
-            manage_mcm(args.server, action)
+            manage_mcm(args.server,
+                       action)
         elif args.nvmesh_object == 'cluster':
-            manage_cluster(args.detail, action, args.prefix)
+            manage_cluster(args.detail,
+                           action,
+                           args.prefix)
         cli_exit.validate_exit()
 
     define_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1326,7 +1505,11 @@ class NvmeshShell(Cmd):
         of selected servers and hosts. Excample: runcmd manager -c systemctl status mongod"""
         user.get_ssh_user()
         user.get_api_user()
-        self.poutput(self.run_command(args.command, args.scope, args.prefix, args.parallel, args.server))
+        self.poutput(self.run_command(args.command,
+                                      args.scope,
+                                      args.prefix,
+                                      args.parallel,
+                                      args.server))
         cli_exit.validate_exit()
 
     @staticmethod
@@ -1448,8 +1631,13 @@ class NvmeshShell(Cmd):
                                            % args.name[0]))
                     return
                 else:
-                    self.poutput(update_volume(volume[0], args.size, args.description, args.limit_by_disk,
-                                               args.limit_by_target, args.drive_class, args.target_class))
+                    self.poutput(update_volume(volume[0],
+                                               args.size,
+                                               args.description,
+                                               args.limit_by_disk,
+                                               args.limit_by_target,
+                                               args.drive_class,
+                                               args.target_class))
             elif args.object == 'targetclass':
                 target_class = json.loads(nvmesh.get_target_class(args.name[0]))
                 if len(target_class) == 0:
@@ -1458,7 +1646,9 @@ class NvmeshShell(Cmd):
                                            % args.name[0]))
                     return
                 else:
-                    self.poutput(update_target_class(target_class[0], args.server, args.description))
+                    self.poutput(update_target_class(target_class[0],
+                                                     args.server,
+                                                     args.description))
             elif args.object == 'driveclass':
                 drive_class = json.loads(nvmesh.get_drive_class(args.name[0]))
                 if len(drive_class) == 0:
@@ -1467,7 +1657,10 @@ class NvmeshShell(Cmd):
                         % args.name[0]))
                     return
                 else:
-                    self.poutput(update_drive_class(drive_class[0], args.drive, args.description, args.file))
+                    self.poutput(update_drive_class(drive_class[0],
+                                                    args.drive,
+                                                    args.description,
+                                                    args.file))
         cli_exit.validate_exit()
 
     evict_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1869,13 +2062,14 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
-                                             humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
-                                                                       binary=True),
+                                             humanfriendly.format_size((int(volume['blocks'])
+                                                                        * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
                                              humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
                                              ' '.join(set(target_list)),
                                              ' '.join(set(target_disk_list)),
-                                             ' '.join(target_classes_list) if target_classes_list is not None else "n/a",
+                                             ' '.join(target_classes_list) if target_classes_list is not None
+                                             else "n/a",
                                              ' '.join(drive_classes_list) if drive_classes_list is not None else "n/a",
                                              awareness_domain if awareness_domain is not None else "n/a"])
 
@@ -1884,13 +2078,14 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
-                                             humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
-                                                                       binary=True),
+                                             humanfriendly.format_size((int(volume['blocks'])
+                                                                        * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
                                              humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True),
                                              ' '.join(set(target_list)),
                                              ' '.join(set(target_disk_list)),
-                                             ' '.join(target_classes_list) if target_classes_list is not None else "n/a",
+                                             ' '.join(target_classes_list) if target_classes_list is not None
+                                             else "n/a",
                                              ' '.join(drive_classes_list) if drive_classes_list is not None else "n/a",
                                              awareness_domain if awareness_domain is not None else "n/a",
                                              format_smart_table(volume_layout_list, ["Chunk",
@@ -1907,8 +2102,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
-                                             humanfriendly.format_size((int(volume['blocks']) * int(volume['blockSize'])),
-                                                                       binary=True),
+                                             humanfriendly.format_size((int(volume['blocks'])
+                                                                        * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
                                              humanfriendly.format_size((remaining_dirty_bits * 4096), binary=True)])
             if details is True and not layout:
@@ -1992,9 +2187,13 @@ def show_vpgs(csv_format, json_format, vpgs):
                         server_classes_list.append(server_class)
 
                 vpgs_list.append(
-                    [vpg['name'], vpg_description, vpg['RAIDLevel'], vpg_stripe_width,
+                    [vpg['name'],
+                     vpg_description,
+                     vpg['RAIDLevel'],
+                     vpg_stripe_width,
                      humanfriendly.format_size(vpg['capacity'], binary=True),
-                     '; '.join(disk_classes_list), '; '.join(server_classes_list)])
+                     '; '.join(disk_classes_list),
+                     '; '.join(server_classes_list)])
             if csv_format is True:
                 return formatter.print_tsv(vpgs_list)
             elif json_format is True:
@@ -2035,7 +2234,8 @@ def show_drive_classes(details, csv_format, json_format, classes):
                         if disk["disks"]:
                             for drive in disk['disks']:
                                 if details is True:
-                                    drive_target_list.append(' '.join([drive['diskID'], drive['node_id']]))
+                                    drive_target_list.append(' '.join([drive['diskID'],
+                                                                       drive['node_id']]))
                                 else:
                                     drive_target_list.append(drive['diskID'])
                         else:
@@ -2058,6 +2258,7 @@ def show_drive_classes(details, csv_format, json_format, classes):
         logging.critical(e.message)
         print(formatter.red("Error: " + e.message))
 
+
 def show_logs(all_logs):
     try:
         if get_api_ready() == 0:
@@ -2066,16 +2267,19 @@ def show_logs(all_logs):
             for log_entry in logs_json:
                 if log_entry["level"] == "ERROR":
                     logs_list.append(
-                        "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])), formatter.red(log_entry["level"]),
+                        "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])),
+                                   formatter.red(log_entry["level"]),
                                    log_entry["message"]]))
                 elif log_entry["level"] == "WARNING":
                     logs_list.append(
-                        "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])), formatter.yellow(log_entry["level"]),
+                        "\t".join([str(dateutil.parser.parse(log_entry["timestamp"])),
+                                   formatter.yellow(log_entry["level"]),
                                    log_entry["message"]]).strip())
                 else:
                     logs_list.append(
                         "\t".join(
-                            [str(dateutil.parser.parse(log_entry["timestamp"])), log_entry["level"],
+                            [str(dateutil.parser.parse(log_entry["timestamp"])),
+                             log_entry["level"],
                              log_entry["message"]]).strip())
             return "\n".join(logs_list)
     except Exception, e:
@@ -2197,6 +2401,13 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
             else:
                 host_list = ManagementServer().get_management_server_list()
 
+    if host_list is None:
+        error_message = "Cannot get server/client list and/or verify NVMesh manager from NVMesh management!"
+        logging.critical(error_message)
+        print(formatter.red(error_message))
+        cli_exit.error = True
+        return
+
     if scope == "target":
         if action == "stop" and servers is None and graceful:
             nvmesh.target_cluster_shutdown({"control": "shutdownAll"})
@@ -2228,7 +2439,8 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
             try:
                 if command_return[1][0] == 0:
                     if details is True:
-                        output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
+                        output.append(formatter.bold(" ".join([command_return[0],
+                                                               action.capitalize(),
                                                                formatter.green('OK')])))
                         if prefix is True:
                             output.append(formatter.add_line_prefix(command_return[0], (
@@ -2236,11 +2448,14 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
                         else:
                             output.append((command_return[1][1][:command_return[1][1].rfind('\n')] + "\n"))
                     else:
-                        output.append(" ".join([command_return[0], action.capitalize(), formatter.green('OK')]))
+                        output.append(" ".join([command_return[0],
+                                                action.capitalize(),
+                                                formatter.green('OK')]))
                 else:
                     cli_exit.error = True
                     if details is True:
-                        output.append(formatter.bold(" ".join([command_return[0], action.capitalize(),
+                        output.append(formatter.bold(" ".join([command_return[0],
+                                                               action.capitalize(),
                                                                formatter.red('Failed')])))
                         if prefix is True:
                             output.append(formatter.add_line_prefix(command_return[0], (
@@ -2248,7 +2463,9 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
                         else:
                             output.append(command_return[1][1] + "\n")
                     else:
-                        output.append(" ".join([command_return[0], action.capitalize(), formatter.red('Failed')]))
+                        output.append(" ".join([command_return[0],
+                                                action.capitalize(),
+                                                formatter.red('Failed')]))
             except Exception, e:
                 logging.critical(e.message)
                 return "Error"
@@ -2267,26 +2484,38 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
             if ssh_return:
                 if ssh_return[0] == 0:
                     if details is True:
-                        output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.green('OK')]))
+                        output.append(' '.join([formatter.bold(server),
+                                                action.capitalize(),
+                                                formatter.green('OK')]))
                         if prefix is True:
-                            output.append(formatter.add_line_prefix(server, (ssh_return[1]), True))
+                            output.append(formatter.add_line_prefix(server,
+                                                                    (ssh_return[1]), True))
                         else:
                             output.append((ssh_return[1] + "\n"))
                     else:
-                        output.append(" ".join([server, action.capitalize(), formatter.green('OK')]))
+                        output.append(" ".join([server,
+                                                action.capitalize(),
+                                                formatter.green('OK')]))
                 else:
                     cli_exit.error = True
                     if details is True:
-                        output.append(' '.join([formatter.bold(server), action.capitalize(), formatter.red('Failed')]))
+                        output.append(' '.join([formatter.bold(server),
+                                                action.capitalize(),
+                                                formatter.red('Failed')]))
                         if prefix is True:
-                            output.append(formatter.add_line_prefix(server, (ssh_return[1] if not None else None), True))
+                            output.append(formatter.add_line_prefix(server,
+                                                                    (ssh_return[1] if not None else None), True))
                         else:
                             output.append((ssh_return[1] if not None else None + "\n"))
                     else:
-                        output.append(" ".join([server, action.capitalize(), formatter.red('Failed')]))
+                        output.append(" ".join([server,
+                                                action.capitalize(),
+                                                formatter.red('Failed')]))
             else:
                 cli_exit.error = True
-                output.append(" ".join([server, action.capitalize(), formatter.red('Failed')]))
+                output.append(" ".join([server,
+                                        action.capitalize(),
+                                        formatter.red('Failed')]))
         return "\n".join(output)
 
 
@@ -2299,19 +2528,23 @@ def attach_detach_volumes(action, clients, volumes):
             for client in clients:
                 command_line = " ".join(['nvmesh_attach_volumes', " ".join(volumes)])
                 parallel_execution_map.append([str(client), str(command_line)])
-            command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
+            command_return_list = process_pool.map(run_parallel_ssh_command,
+                                                   parallel_execution_map)
             process_pool.close()
         elif action == 'detach':
             for client in clients:
                 command_line = " ".join(['nvmesh_detach_volumes', " ".join(volumes)])
                 parallel_execution_map.append([str(client), str(command_line)])
-            command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
+            command_return_list = process_pool.map(run_parallel_ssh_command,
+                                                   parallel_execution_map)
             process_pool.close()
         output = []
         for command_return in command_return_list:
             if command_return[0] != 0:
                 cli_exit.error = True
-            output.append(formatter.add_line_prefix(command_return[0], command_return[1][1], False))
+            output.append(formatter.add_line_prefix(command_return[0],
+                                                    command_return[1][1],
+                                                    False))
         return "\n".join(output)
     except Exception, e:
         print(formatter.red("Error: " + e.message))
@@ -2406,7 +2639,7 @@ def run_parallel_ssh_command(argument):
 
 
 def manage_volume(action, name, capacity, description, disk_classes, server_classes, limit_by_nodes, limit_by_disks,
-                  awareness, raid_level, stripe_width, number_of_mirrors, vpg, force):
+                  awareness, raid_level, stripe_width, vpg, force):
     if get_api_ready() == 0:
         api_payload = {}
         payload = {}
@@ -2436,11 +2669,11 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
                     payload["stripeSize"] = 32
                     payload["stripeWidth"] = int(stripe_width[0])
                 elif raid_level[0] == "1":
-                    payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
+                    payload["numberOfMirrors"] = 1
                 elif raid_level[0] == "10":
                     payload["stripeSize"] = 32
                     payload["stripeWidth"] = int(stripe_width[0])
-                    payload["numberOfMirrors"] = int(number_of_mirrors[0]) if number_of_mirrors is not None else 1
+                    payload["numberOfMirrors"] = 1
             elif vpg is not None and raid_level is None:
                 payload["VPG"] = vpg[0]
             api_payload["create"] = [payload]
@@ -2448,11 +2681,15 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
             api_payload["edit"] = []
             api_return = json.loads(nvmesh.manage_volume(api_payload))
             if api_return['create'][0]['success'] is True:
-                return " ".join(["Volume", name, "successfully created.", formatter.green('OK')])
+                return " ".join(["Volume",
+                                 name,
+                                 "successfully created.",
+                                 formatter.green('OK')])
 
             else:
                 cli_exit.error = True
-                return " ".join([api_return['create'][0]['err'], formatter.red('Failed')])
+                return " ".join([api_return['create'][0]['err'],
+                                 formatter.red('Failed')])
 
         elif action == 'remove':
             api_return = []
@@ -2467,10 +2704,14 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
                 api_return.append(json.loads(nvmesh.manage_volume(api_payload)))
             for item in api_return:
                 if item['remove'][0]['success'] is True:
-                    output.append(" ".join(["Volume", item['remove'][0]['id'], "successfully deleted.",
+                    output.append(" ".join(["Volume",
+                                            item['remove'][0]['id'],
+                                            "successfully deleted.",
                                             formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "to delete", item['remove'][0]['id'], "-",
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "to delete", item['remove'][0]['id'],
+                                            "-",
                                             item['remove'][0]['ex']]))
                     cli_exit.error = True
             return "\n".join(output)
@@ -2496,10 +2737,15 @@ def update_volume(volume, capacity, description, drives, targets, drive_classes,
     api_payload["edit"] = [volume]
     api_return = json.loads(nvmesh.manage_volume(api_payload))
     if api_return["edit"][0]["success"] is True:
-        output = " ".join(["Volume", volume["name"], "successfully updated.", formatter.green('OK')])
+        output = " ".join(["Volume",
+                           volume["name"],
+                           "successfully updated.",
+                           formatter.green('OK')])
         return output
     else:
-        output = " ".join([formatter.red('Failed'), "to update", volume["name"]])
+        output = " ".join([formatter.red('Failed'),
+                           "to update",
+                           volume["name"]])
         cli_exit.error = True
         return output
 
@@ -2513,10 +2759,17 @@ def update_target_class(target_class, servers, description):
     api_return = json.loads(nvmesh.update_target_class(api_payload))
     print api_return
     if api_return[0]["success"] is True:
-        output = " ".join(["target class", target_class["name"], "successfully updated.", formatter.green('OK')])
+        output = " ".join(["target class",
+                           target_class["name"],
+                           "successfully updated.",
+                           formatter.green('OK')])
         return output
     else:
-        output = " ".join([formatter.red('Failed'), "to update", target_class["name"], "-", api_return[0]["err"]])
+        output = " ".join([formatter.red('Failed'),
+                           "to update",
+                           target_class["name"],
+                           "-",
+                           api_return[0]["err"]])
         cli_exit.error = True
         return output
 
@@ -2531,10 +2784,15 @@ def update_drive_class(drive_class, drives, description, file_path):
     api_payload = [drive_class]
     api_return = json.loads(nvmesh.update_drive_class(api_payload))
     if api_return[0]["success"] is True:
-        output = " ".join(["Drive class", drive_class["_id"], "successfully updated.", formatter.green('OK')])
+        output = " ".join(["Drive class",
+                           drive_class["_id"],
+                           "successfully updated.",
+                           formatter.green('OK')])
         return output
     else:
-        output = " ".join([formatter.red('Failed'), "to update", drive_class["_id"]])
+        output = " ".join([formatter.red('Failed'),
+                           "to update",
+                           drive_class["_id"]])
         cli_exit.error = True
         return output
 
@@ -2596,14 +2854,24 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
                 payload["disks"] = [{"model": model[0],
                                      "disks": drive_list}]
                 api_payload = [payload]
-                api_return.append([re.sub("(?<=_)_|_(?=_)", "", model[0]),
-                                   json.dumps(nvmesh.manage_drive_class("save", api_payload))])
+                api_return.append([re.sub("(?<=_)_|_(?=_)",
+                                          "",
+                                          model[0]),
+                                   json.dumps(nvmesh.manage_drive_class("save",
+                                                                        api_payload))])
             for line in api_return:
                 if "null" in line[1]:
-                    output.append(" ".join(["Drive Class", line[0], "successfully created.", formatter.green('OK')]))
+                    output.append(" ".join(["Drive Class",
+                                            line[0],
+                                            "successfully created.",
+                                            formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't create Drive Class", line[0],
-                                            " - ", "Check for duplicates."]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t",
+                                            "Couldn't create Drive Class",
+                                            line[0],
+                                            " - ",
+                                            "Check for duplicates."]))
                     cli_exit.error = True
             return "\n".join(output)
         elif action == "save":
@@ -2619,13 +2887,20 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
                 payload["disks"] = [{"model": model[0],
                                      "disks": parse_drive_args(drives)}]
             api_payload = [payload]
-            api_return.append([name[0], json.dumps(nvmesh.manage_drive_class("save", api_payload))])
+            api_return.append([name[0],
+                               json.dumps(nvmesh.manage_drive_class("save", api_payload))])
             for line in api_return:
                 if "null" in line[1]:
-                    output.append(" ".join(["Drive Class", name[0], "successfully created.", formatter.green('OK')]))
+                    output.append(" ".join(["Drive Class",
+                                            name[0],
+                                            "successfully created.",
+                                            formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't create Drive Class", name[0],
-                                            " - ", "Check for duplicates."]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t", "Couldn't create Drive Class",
+                                            name[0],
+                                            " - ",
+                                            "Check for duplicates."]))
                     cli_exit.error = True
             return "\n".join(output)
 
@@ -2636,10 +2911,16 @@ def manage_drive_class(action, class_list, drives, model, name, description, dom
 
                 if return_info[0]["success"] is True:
                     output.append(
-                        " ".join(["Drive Class", drive_class, "successfully deleted.", formatter.green('OK')]))
+                        " ".join(["Drive Class",
+                                  drive_class,
+                                  "successfully deleted.",
+                                  formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't delete Drive Class.", drive_class,
-                                            " - ", return_info[0]["msg"]]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t", "Couldn't delete Drive Class.",
+                                            drive_class,
+                                            " - ",
+                                            return_info[0]["msg"]]))
                     cli_exit.error = True
             return "\n".join(output)
 
@@ -2655,13 +2936,20 @@ def manage_target_class(action, class_list, name, servers, description, domains)
                 payload["targetNodes"] = [target]
                 payload["description"] = "automatically created"
                 api_payload = [payload]
-                api_return.append([target.split(".")[0], json.dumps(nvmesh.manage_target_class("save", api_payload))])
+                api_return.append([target.split(".")[0],
+                                   json.dumps(nvmesh.manage_target_class("save", api_payload))])
             for line in api_return:
                 if "null" in line[1]:
-                    output.append(" ".join(["Target Class", line[0], "successfully created.", formatter.green('OK')]))
+                    output.append(" ".join(["Target Class",
+                                            line[0],
+                                            "successfully created.",
+                                            formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't create Target Class", line[0],
-                                            " - ", "Check for duplicates."]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t", "Couldn't create Target Class",
+                                            line[0],
+                                            " - ",
+                                            "Check for duplicates."]))
                     cli_exit.error = True
             return "\n".join(output)
         elif action == "delete":
@@ -2671,10 +2959,17 @@ def manage_target_class(action, class_list, name, servers, description, domains)
 
                 if return_info[0]["success"] is True:
                     output.append(
-                        " ".join(["Target Class", target_class, "successfully deleted.", formatter.green('OK')]))
+                        " ".join(["Target Class",
+                                  target_class,
+                                  "successfully deleted.",
+                                  formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't delete Target Class", target_class,
-                                            " - ", return_info[0]["msg"]]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t",
+                                            "Couldn't delete Target Class",
+                                            target_class,
+                                            " - ",
+                                            return_info[0]["msg"]]))
                     cli_exit.error = True
             return "\n".join(output)
         elif action == "save":
@@ -2688,10 +2983,16 @@ def manage_target_class(action, class_list, name, servers, description, domains)
             api_return.append([name, json.dumps(nvmesh.manage_target_class("save", api_payload))])
             for line in api_return:
                 if "null" in line[1]:
-                    output.append(" ".join(["Target Class", line[0], "successfully created.", formatter.green('OK')]))
+                    output.append(" ".join(["Target Class",
+                                            line[0],
+                                            "successfully created.",
+                                            formatter.green('OK')]))
                 else:
-                    output.append(" ".join([formatter.red('Failed'), "\t", "Couldn't create Target Class", line[0],
-                                            " - ", "Check for duplicates."]))
+                    output.append(" ".join([formatter.red('Failed'),
+                                            "\t", "Couldn't create Target Class",
+                                            line[0],
+                                            " - ",
+                                            "Check for duplicates."]))
                     cli_exit.error = True
             return "\n".join(output)
 
@@ -2790,8 +3091,9 @@ def start_shell():
         shell.cmdloop('''
 Copyright (c) 2018 Excelero, Inc. All rights reserved.
 
-This program comes with ABSOLUTELY NO WARRANTY; for licensing and warranty details type 'license'.
-This is free software, and you are welcome to redistribute it under certain conditions; type 'license' for details.
+This program comes with ABSOLUTELY NO WARRANTY; for licensing and warranty details type 'show license'.
+This is free software, and you are welcome to redistribute it under certain conditions; type ' show license' for 
+details.
 
 Starting the NVMesh shell version %s ...''' % __version__)
 
