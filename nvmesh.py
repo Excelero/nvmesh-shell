@@ -3008,7 +3008,8 @@ def show_drives(details, targets, tsv):
             else:
                 target_details = json.loads(nvmesh.get_server_by_id(target))
                 for disk in target_details['disks']:
-                    vendor = disk['Vendor'] if not disk['Vendor'] in NVME_VENDORS else NVME_VENDORS[disk['Vendor']]
+                    vendor = disk['Vendor'] if not str(disk['Vendor']).lower() in NVME_VENDORS else \
+                        NVME_VENDORS[str(disk['Vendor']).lower()]
                     status = u'\u2705' if disk["status"].lower() == "ok" else u'\u274C'
                     if 'isOutOfService' in disk:
                         in_service = formatter.red("No")
