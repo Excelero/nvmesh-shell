@@ -46,7 +46,9 @@ RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
     '0': 'Striped RAID-0',
     '1': 'Mirrored RAID-1',
-    '10': 'Striped & Mirrored RAID-10'
+    '10': 'Striped & Mirrored RAID-10',
+    'ec': 'Erasure Coding',
+    'con': 'Concatenated'
 }
 
 NVME_VENDORS = {
@@ -55,6 +57,17 @@ NVME_VENDORS = {
     '0x1179': 'Toshiba',
     '0x144d': 'Samsung',
     '0x1bb1': 'Seagate'
+}
+
+PROTECTION_LEVELS = {
+    2: 'Full Separation',
+    1: 'Minimal Separation',
+    0: 'Ignore Separation'
+}
+
+FORMAT_TYPES = {
+    'ec': 'format_ec',
+    'legacy': 'format_raid'
 }
 
 WARNINGS = {
@@ -732,6 +745,12 @@ class Api:
         self.action = 'post'
         return self.execute_api_call()
 
+    def format_drive(self, payload):
+        self.payload = payload
+        self.endpoint = '/servers/formatDiskByDiskIds'
+        self.action = 'post'
+        return self.execute_api_call()
+
 
 class Exit:
     def __init__(self):
@@ -890,6 +909,15 @@ class NvmeshShell(Cmd):
                                  "-O scope:Rack&identifier:A "
                                  "or in case you want to use more than one domain descriptor:"
                                  "-O scope:Rack&identifier:A scope:Datacenter&identifier:DRsite")
+    add_parser.add_argument('-P', '--parity', nargs=1, required=False,
+                            help='Parity configuration. Required for Erasure Coding NVMesh volumes. Example: "8+2" '
+                                 'which equals to 8 data blocks + 2 parity blocks')
+    add_parser.add_argument('-R', '--node-redundancy', nargs=1, required=False,
+                            help='NVMesh Target node redundancy configuration. Required for Erasure Coding NVMesh '
+                                 'volumes. NVMesh supports three target node redundancy levels, aka. protection levels.'
+                                 '0 = no separation or redundancy on the node level; 1 = N+1 node redundancy or '
+                                 'minimal separation; 2 = N+2 redundancy or maximal separation. Chose between 0, 1, '
+                                 'or 2.')
     add_parser.add_argument('-c', '--count', nargs=1, required=False,
                             help='Number of volumes to create and add. 100 Max.')
     add_parser.add_argument('-t', '--target-class', nargs='+', required=False,
@@ -981,6 +1009,17 @@ class NvmeshShell(Cmd):
                 print(formatter.yellow(
                     "Raid level information missing! Use the -r argument to set the raid level."))
                 return
+            if args.raid_level[0] == 'ec':
+                if args.parity is None:
+                    print(formatter.yellow(
+                        "Erasure coding parity information missing! Use the -P argument to set the parity "
+                        "configuration."))
+                    return
+                if args.node_redundancy is None:
+                    print(formatter.yellow(
+                        "Erasure coding node redundancy aka. protection level information missing! Use the -R argument "
+                        "to set the node redundancy configuration."))
+                    return
             if args.vpg is None:
                 if '0' in args.raid_level[0] and args.stripe_width is None:
                     print(formatter.yellow(
@@ -1007,7 +1046,9 @@ class NvmeshShell(Cmd):
                                                    args.raid_level,
                                                    args.stripe_width,
                                                    args.vpg,
-                                                   None))
+                                                   None,
+                                                   args.parity,
+                                                   args.node_redundancy))
             else:
                 self.poutput(manage_volume('create',
                                            args.name[0],
@@ -1021,7 +1062,9 @@ class NvmeshShell(Cmd):
                                            args.raid_level,
                                            args.stripe_width,
                                            args.vpg,
-                                           None))
+                                           None,
+                                           args.parity,
+                                           args.node_redundancy))
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1116,6 +1159,8 @@ class NvmeshShell(Cmd):
                                            None,
                                            None,
                                            None,
+                                           None,
+                                           None,
                                            None))
             else:
                 if "y" in raw_input(WARNINGS['delete_volume']).lower():
@@ -1131,13 +1176,14 @@ class NvmeshShell(Cmd):
                                                None,
                                                None,
                                                None,
+                                               None,
+                                               None,
                                                None))
                 else:
                     return
         elif args.nvmesh_object == 'drive':
             if args.drive:
-                self.poutput(manage_drive('delete',
-                                          args.drive[0]))
+                self.poutput(manage_drive('delete', args.drive[0], None))
             else:
                 cli_exit.error = True
                 print(formatter.yellow("Use the -D/--drive argument to specify the drive to be deleted."))
@@ -1676,10 +1722,35 @@ class NvmeshShell(Cmd):
         """Evict a drive in the NVMesh cluster."""
         try:
             if args.yes:
-                self.poutput(manage_drive('evict', args.drive[0]))
+                self.poutput(manage_drive('evict', args.drive[0], None))
             else:
                 if 'y' in raw_input(WARNINGS['evict_drive']):
-                    self.poutput(manage_drive('evict', args.drive[0]))
+                    self.poutput(manage_drive('evict', args.drive[0], None))
+        except Exception, e:
+            print(formatter.red("Error: " + e.message))
+            logging.critical(e.message)
+            cli_exit.error = True
+
+    format_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
+    format_parser.add_argument('-d', '--drive', nargs='+', required=True,
+                              help="The drive ID or space separated list of drive IDs to be formatted.")
+    format_parser.add_argument('-f', '--format', nargs=1, required=True,
+                               help="The format to be used. Valid options are: 'legacy' for NVMesh RAID-0, 1, 10, and "
+                                    "Concatenated volumes, and 'ec' to support the new NVMesh distributed EC parity "
+                                    "feature.")
+    format_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
+                              help="Automatically answer 'yes' and skip operational warnings.")
+
+    @with_argparser(format_parser)
+    @with_category("NVMesh Resource Management")
+    def do_format(self, args):
+        """Format a drive in the NVMesh cluster."""
+        try:
+            if args.yes:
+                self.poutput(manage_drive('format', args.drive, args.format[0]))
+            else:
+                if 'y' in raw_input(WARNINGS['format_drive']):
+                    self.poutput(manage_drive('format', args.drive, args.format[0]))
         except Exception, e:
             print(formatter.red("Error: " + e.message))
             logging.critical(e.message)
@@ -2023,6 +2094,17 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                             drive_classes_list = None
                     else:
                         drive_classes_list = None
+                    if 'dataBlocks' in volume:
+                        data_blocks = str(volume['dataBlocks'])
+                    if 'parityBlocks' in volume:
+                        parity_blocks = str(volume['parityBlocks'])
+                    if volume['RAIDLevel'].lower() == "erasure coding":
+                        parity_info = "+".join([data_blocks, parity_blocks])
+                        protection_level = volume['protectionLevel']
+                        stripe_width = "n/a"
+                    else:
+                        parity_info = "n/a"
+                        protection_level = "n/a"
 
                     target_list = []
                     target_disk_list = []
@@ -2063,6 +2145,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
+                                             parity_info,
+                                             protection_level,
                                              humanfriendly.format_size((int(volume['blocks'])
                                                                         * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
@@ -2079,6 +2163,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
+                                             parity_info,
+                                             protection_level,
                                              humanfriendly.format_size((int(volume['blocks'])
                                                                         * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
@@ -2103,6 +2189,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                              health,
                                              status,
                                              volume['RAIDLevel'],
+                                             parity_info,
+                                             protection_level,
                                              humanfriendly.format_size((int(volume['blocks'])
                                                                         * int(volume['blockSize'])), binary=True),
                                              stripe_width if stripe_width is not None else "n/a",
@@ -2118,6 +2206,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                                'Volume Health',
                                                'Volume Status',
                                                'Volume Type',
+                                               'Parity Info',
+                                               'Protection Level',
                                                'Volume Size',
                                                'Stripe Width',
                                                'Dirty Bits',
@@ -2137,6 +2227,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                                'Volume Health',
                                                'Volume Status',
                                                'Volume Type',
+                                               'Parity Info',
+                                               'Protection Level',
                                                'Volume Size',
                                                'Stripe Width',
                                                'Dirty Bits',
@@ -2157,6 +2249,8 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                                                'Volume Health',
                                                'Volume Status',
                                                'Volume Type',
+                                               'Parity Info',
+                                               'Protection Level',
                                                'Volume Size',
                                                'Stripe Width',
                                                'Dirty Bits'])
@@ -2640,7 +2734,7 @@ def run_parallel_ssh_command(argument):
 
 
 def manage_volume(action, name, capacity, description, disk_classes, server_classes, limit_by_nodes, limit_by_disks,
-                  awareness, raid_level, stripe_width, vpg, force):
+                  awareness, raid_level, stripe_width, vpg, force, ec_parity, ec_node_redundancy):
     if get_api_ready() == 0:
         api_payload = {}
         payload = {}
@@ -2656,15 +2750,23 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
                 payload["diskClasses"] = disk_classes
             if server_classes is not None:
                 payload["serverClasses"] = server_classes
+            else:
+                payload["serverClasses"] = []
             if limit_by_nodes is not None:
                 payload["limitByNodes"] = limit_by_nodes
+            else:
+                payload["limitByNodes"] = []
             if limit_by_disks is not None:
                 payload["limitByDisks"] = limit_by_disks
+            else:
+                payload["limitByDisks"] = []
             if awareness is not None:
                 payload["domain"] = awareness[0]
             if raid_level is not None and vpg is None:
                 payload["RAIDLevel"] = RAID_LEVELS[raid_level[0]]
                 if raid_level[0] == "lvm":
+                    pass
+                if raid_level[0] == "con":
                     pass
                 elif raid_level[0] == "0":
                     payload["stripeSize"] = 32
@@ -2675,6 +2777,12 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
                     payload["stripeSize"] = 32
                     payload["stripeWidth"] = int(stripe_width[0])
                     payload["numberOfMirrors"] = 1
+                elif raid_level[0] == "ec":
+                    payload['protectionLevel'] = PROTECTION_LEVELS[int(ec_node_redundancy[0])]
+                    payload['dataBlocks'] = int(ec_parity[0].split('+')[0])
+                    payload['parityBlocks'] = int(ec_parity[0].split('+')[1])
+                    payload["stripeSize"] = 32
+                    payload["stripeWidth"] = 1
             elif vpg is not None and raid_level is None:
                 payload["VPG"] = vpg[0]
             api_payload["create"] = [payload]
@@ -2689,7 +2797,7 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
 
             else:
                 cli_exit.error = True
-                return " ".join([api_return['create'][0]['err'],
+                return " ".join(["Couldn't create volume", name,
                                  formatter.red('Failed')])
 
         elif action == 'remove':
@@ -2798,7 +2906,7 @@ def update_drive_class(drive_class, drives, description, file_path):
         return output
 
 
-def manage_drive(action, drive):
+def manage_drive(action, drive, format_type):
     get_api_ready()
     if action == 'evict':
         payload = {}
@@ -2830,6 +2938,27 @@ def manage_drive(action, drive):
         else:
             cli_exit.error = True
             output = " ".join(["Drive", drive, "not deleted!", formatter.red("Failed")])
+            return output
+    elif action == 'format':
+        payload = {}
+        payload['formatType'] = FORMAT_TYPES[format_type]
+        payload['diskIDs'] = drive
+        api_return = json.loads(nvmesh.format_drive(payload))
+        if api_return:
+            output_list = []
+            for drive_key, return_value in api_return.iteritems():
+                if return_value['success']:
+                    output = " ".join(["Drive", drive_key, "successfully formatted.", formatter.green("OK")])
+                    output_list.append(output)
+                else:
+                    cli_exit.error = True
+                    output = " ".join(["Drive", drive_key, "not formatted!", return_value['err'],
+                                       formatter.red("Failed")])
+                    output_list.append(output)
+            return "\n".join(output_list)
+        else:
+            cli_exit.error = True
+            output = " ".join(["Drive/s", " ".join(drive), "not formatted!", formatter.red("Failed")])
             return output
 
 
@@ -3010,7 +3139,30 @@ def show_drives(details, targets, tsv):
                 for disk in target_details['disks']:
                     vendor = disk['Vendor'] if not str(disk['Vendor']).lower() in NVME_VENDORS else \
                         NVME_VENDORS[str(disk['Vendor']).lower()]
-                    status = u'\u2705' if disk["status"].lower() == "ok" else u'\u274C'
+                    if disk["status"].lower() == "ok":
+                        status = u'\u2705'
+                    elif disk["status"].lower() == "not_initialized":
+                        status = formatter.yellow("Not Initialized")
+                        drive_format = "n/a"
+                    elif disk["status"].lower() == "initializing":
+                        status = "Initializing - %s%%" % (disk['nZeroedBlks'] * 100 / disk['availableBlocks'])
+                    else:
+                        status = u'\u274C'
+                    if 'metadataCapabilities' in disk:
+                        if len(disk['metadataCapabilities']) > 0:
+                            ec_support = "Yes"
+                        else:
+                            ec_support = "No"
+                    else:
+                        ec_support = "n/a"
+                    if 'metadata_size' in disk:
+                        if disk["status"].lower() != "not_initialized":
+                            if disk['metadata_size'] > 0:
+                                drive_format = "EC"
+                            else:
+                                drive_format = "Legacy"
+                    else:
+                        drive_format = "n/a"
                     if 'isOutOfService' in disk:
                         in_service = formatter.red("No")
                         status = "n/a"
@@ -3024,11 +3176,12 @@ def show_drives(details, targets, tsv):
                                                                      binary=True),
                                            status,
                                            in_service,
+                                           ec_support,
+                                           drive_format,
                                            humanfriendly.format_size(disk['block_size'], binary=True),
                                            " ".join([str(100 - int((disk['Available_Spare'].split("_")[0]))), "%"]),
                                            target,
                                            disk['Numa_Node'],
-                                           disk['pci_root'],
                                            disk['Submission_Queues']])
                     else:
                         drive_list.append([vendor,
@@ -3038,6 +3191,8 @@ def show_drives(details, targets, tsv):
                                                                      binary=True),
                                            status,
                                            in_service,
+                                           ec_support,
+                                           drive_format,
                                            target])
         if tsv:
             return formatter.print_tsv(drive_list)
@@ -3049,11 +3204,12 @@ def show_drives(details, targets, tsv):
                                        'Size',
                                        'Status',
                                        'In Service',
+                                       'EC Support',
+                                       'Format',
                                        'Sector Size',
                                        'Wear',
                                        'Target',
                                        'Numa',
-                                       'PCI root',
                                        'QPs'])
         else:
             return format_smart_table(sorted(drive_list), ['Vendor',
@@ -3062,6 +3218,8 @@ def show_drives(details, targets, tsv):
                                                            'Size',
                                                            'Status',
                                                            'In Service',
+                                                           'EC Support',
+                                                           'Format',
                                                            'Target'])
 
 
