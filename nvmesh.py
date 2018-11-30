@@ -40,7 +40,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '46'
+__version__ = '47'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -492,10 +492,10 @@ class SSHRemoteOperations:
         try:
             self.ssh.connect(host, username=self.ssh_user_name, password=self.ssh_password, timeout=5,
                              port=self.ssh_port)
-            if user.SSH_sudo:
+            if user.SSH_sudo.lower() == 'true':
                 remote_command = " ".join(["sudo -S -p ''", remote_command])
             stdin, stdout, stderr = self.ssh.exec_command(remote_command)
-            if user.SSH_sudo:
+            if user.SSH_sudo.lower() == 'true':
                 stdin.write(user.SSH_password + "\n")
                 stdin.flush()
             self.remote_command_return = stdout.channel.recv_exit_status(), stdout.read().strip(), stderr.read().strip()
