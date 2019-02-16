@@ -2663,13 +2663,21 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
     else:
         for server in host_list:
             if action == "check":
-                ssh_return = ssh.return_remote_command_std_output(server, "/opt/NVMesh/%s*/services/nvmesh%s status" % (scope[0], scope))
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s status" % (
+                                                                      scope[0], scope))
             elif action == "start":
-                ssh_return = ssh.return_remote_command_std_output(server, "/opt/NVMesh/%s*/services/nvmesh%s status" % (scope[0], scope))
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s start" % (
+                                                                      scope[0], scope))
             elif action == "stop":
-                ssh_return = ssh.return_remote_command_std_output(server, "/opt/NVMesh/%s*/services/nvmesh%s status" % (scope[0], scope))
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s stop" % (
+                                                                      scope[0], scope))
             elif action == "restart":
-                ssh_return = ssh.return_remote_command_std_output(server, "/opt/NVMesh/%s*/services/nvmesh%s status" % (scope[0], scope))
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s restart" % (
+                                                                      scope[0], scope))
             if ssh_return:
                 if ssh_return[0] == 0:
                     if details is True:
