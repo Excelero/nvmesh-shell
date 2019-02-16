@@ -40,7 +40,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '47'
+__version__ = '48'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -532,9 +532,9 @@ class SSHRemoteOperations:
             print formatter.print_red("Couldn't execute command %s on %s!" % (remote_command, host))
             return
 
-    def check_if_service_is_running(self, host, service):
+    def check_if_service_is_running(self, host,service):
         try:
-            cmd_output = self.execute_remote_command(host, "/etc/init.d/%s" % service)
+            cmd_output = self.execute_remote_command(host, "/opt/NVMesh/%s/services/%s status" %(service, service))
             if cmd_output[0] == 0:
                 return True
             elif cmd_output[0] == 3:
@@ -562,7 +562,7 @@ class Api:
         self.session.verify = False
         self.err = None
         self.action = None
-        self.timeout = 5
+        self.timeout = 10
 
     def execute_api_call(self):
         try:
@@ -710,6 +710,15 @@ class Api:
         self.action = "post"
         return self.execute_api_call()
 
+    def manage_vpg(self, action, payload):
+        self.payload = payload
+        self.action = "post"
+        if action == 'save':
+            self.endpoint = '/volumeProvisioningGroups/save'
+        elif action == 'delete':
+            self.endpoint = '/volumeProvisioningGroups/delete'
+        return self.execute_api_call()
+
     def set_control_jobs(self, payload):
         self.payload = payload
         self.endpoint = '/clients/setControlJobs'
@@ -735,19 +744,19 @@ class Api:
 
     def evict_drive(self, payload):
         self.payload = payload
-        self.endpoint = '/servers/evictDiskByDiskIds'
+        self.endpoint = '/disks/evictDiskByDiskIds'
         self.action = 'post'
         return self.execute_api_call()
 
-    def delete_drive(self, drive):
-        self.payload = None
-        self.endpoint = '/disks/delete/%s' % drive
+    def delete_drive(self, payload):
+        self.payload = payload
+        self.endpoint = '/disks/delete'
         self.action = 'post'
         return self.execute_api_call()
 
     def format_drive(self, payload):
         self.payload = payload
-        self.endpoint = '/servers/formatDiskByDiskIds'
+        self.endpoint = '/disks/formatDiskByDiskIds'
         self.action = 'post'
         return self.execute_api_call()
 
@@ -775,7 +784,7 @@ class NvmeshShell(Cmd):
 
     def __init__(self):
         Cmd.__init__(self, use_ipython=True)
-        self.hidden_commands = ['py', 'ipy', 'pyscript', '_relative_load', 'eof', 'eos']
+        self.hidden_commands = ['py', 'ipy', 'pyscript', '_relative_load', 'eof', 'eos', 'exit']
 
     prompt = "\033[1;34mnvmesh #\033[0m "
     show_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -937,7 +946,7 @@ class NvmeshShell(Cmd):
     @with_category("NVMesh Resource Management")
     def do_add(self, args):
         """The 'add' sub-command will let you add nvmesh objects to your cluster. E.g. 'add host' will add host
-        entries to your nvmesh-shell environment while 'add volume' will create and add a new volume to the NVMesh
+        entries to your nvmeshcli environment while 'add volume' will create and add a new volume to the NVMesh
         cluster."""
         action = "add"
         if args.nvmesh_object == 'host':
@@ -1065,10 +1074,43 @@ class NvmeshShell(Cmd):
                                            None,
                                            args.parity,
                                            args.node_redundancy))
+        elif args.nvmesh_object == 'vpg':
+            if args.name is None:
+                print(formatter.yellow(
+                    "VPG name missing! Use the -n argument to provide a VPG name."))
+                return
+            if args.size is None:
+                print(formatter.yellow(
+                    "Size/capacity information is missing! Use the -S argument to provide the volume size."))
+                return
+            if args.raid_level is None and args.vpg is None:
+                print(formatter.yellow(
+                    "Raid level information missing! Use the -r argument to set the raid level."))
+                return
+            if args.raid_level[0] == 'ec':
+                if args.parity is None:
+                    print(formatter.yellow(
+                        "Erasure coding parity information missing! Use the -P argument to set the parity "
+                        "configuration."))
+                    return
+                if args.node_redundancy is None:
+                    print(formatter.yellow(
+                        "Erasure coding node redundancy aka. protection level information missing! Use the -R argument "
+                        "to set the node redundancy configuration."))
+                    return
+            self.poutput(manage_vpg('save',
+                                           args.name,
+                                           args.size,
+                                           args.description,
+                                           args.drive_class,
+                                           args.target_class,
+                                           args.domain,
+                                           args.raid_level,
+                                           args.stripe_width))
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
-    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'drive', 'driveclass', 'targetclass'],
+    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'drive', 'driveclass', 'targetclass', 'vpg'],
                                help='Delete hosts, servers, drives, drive classes, and target classes.')
     delete_parser.add_argument('-s', '--server', nargs='+',
                                help='Specify a single server or a list of servers.')
@@ -1140,7 +1182,6 @@ class NvmeshShell(Cmd):
                                                 None,
                                                 None,
                                                 None))
-
         elif args.nvmesh_object == 'volume':
             if args.volume[0] == 'all':
                 volume_list = get_volume_list()
@@ -1183,10 +1224,25 @@ class NvmeshShell(Cmd):
                     return
         elif args.nvmesh_object == 'drive':
             if args.drive:
-                self.poutput(manage_drive('delete', args.drive[0], None))
+                self.poutput(manage_drive('delete', args.drive, None))
             else:
                 cli_exit.error = True
                 print(formatter.yellow("Use the -D/--drive argument to specify the drive to be deleted."))
+        elif args.nvmesh_object == 'vpg':
+            if args.name is None:
+                print(formatter.yellow(
+                    "VPG name missing! Use the -n argument to provide a VPG name."))
+                return
+
+            self.poutput(manage_vpg('delete',
+                                    args.name[0],
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None))
         cli_exit.validate_exit()
 
     attach_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1242,10 +1298,10 @@ class NvmeshShell(Cmd):
                               help='Specify where you want to check the NVMesh services status.')
     check_parser.add_argument('-d', '--detail', required=False, action='store_const', const=True,
                               help='Show detailed service information.')
-    check_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
+    check_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True, default=True,
                               help='Adds the host name at the beginning of each line. This helps to identify the '
                                    'content when piping into a grep or similar')
-    check_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
+    check_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True, default=True,
                               help='Check the hosts/servers in parallel.')
     check_parser.add_argument('-s', '--server', nargs='+', required=False,
                               help='Specify a single or a space separated list of managers, targets or clients.')
@@ -1297,7 +1353,7 @@ class NvmeshShell(Cmd):
     stop_parser.add_argument('-g', '--graceful', nargs=1, required=False, default="True", choices=['True', 'False'],
                              help="Graceful stop of all NVMesh targets in the cluster."
                                   " The default is set to 'True'")
-    stop_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
+    stop_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True, default=True,
                              help='Adds the host name at the beginning of each line. This helps to identify the '
                                   'content when piping into a grep or similar')
     stop_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True, default=True,
@@ -1395,7 +1451,7 @@ class NvmeshShell(Cmd):
                               help='Specify the NVMesh service type you want to start.')
     start_parser.add_argument('-d', '--detail', required=False, action='store_const', const=True,
                               help='List and view the service details.')
-    start_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
+    start_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True, default=True,
                               help='Adds the host name at the beginning of each line. This helps to identify the '
                                    'content when piping into a grep or similar')
     start_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True, default=True,
@@ -1453,7 +1509,7 @@ class NvmeshShell(Cmd):
     restart_parser.add_argument('-g', '--graceful', nargs=1, required=False, default="True", choices=['True', 'False'],
                                 help='Restart with a graceful stop of the targets in the cluster.'
                                      'The default is set to True')
-    restart_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
+    restart_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True, default=True,
                                 help='Adds the host name at the beginning of each line. This helps to identify the '
                                      'content when piping into a grep or similar')
     restart_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True, default=True,
@@ -1473,28 +1529,63 @@ class NvmeshShell(Cmd):
         user.get_api_user()
         action = 'restart'
         if args.nvmesh_object == 'target':
-            self.poutput(manage_nvmesh_service('target',
-                                               args.detail,
-                                               args.server,
-                                               action,
-                                               args.prefix,
-                                               args.parallel, (False if args.graceful[0] == "False" else True)))
+            if args.yes:
+                self.poutput(manage_nvmesh_service('target',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
+                                                   args.parallel, (False if args.graceful[0] == "False" else True)))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_target']).lower():
+                    self.poutput(manage_nvmesh_service('target',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
+                                                       args.parallel, (False if args.graceful[0] == "False" else True)))
+                else:
+                    return
         elif args.nvmesh_object == 'client':
-            self.poutput(manage_nvmesh_service('client',
-                                               args.detail,
-                                               args.server,
-                                               action,
-                                               args.prefix,
-                                               args.parallel,
-                                               False))
+            if args.yes:
+                self.poutput(manage_nvmesh_service('client',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
+                                                   args.parallel,
+                                                   False))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_client']).lower():
+                    self.poutput(manage_nvmesh_service('client',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
+                                                       args.parallel,
+                                                       False))
+                else:
+                    return
         elif args.nvmesh_object == 'manager':
-            self.poutput(manage_nvmesh_service('mgr',
-                                               args.detail,
-                                               args.server,
-                                               action,
-                                               args.prefix,
-                                               args.parallel,
-                                               False))
+            if args.yes:
+                self.poutput(manage_nvmesh_service('mgr',
+                                                   args.detail,
+                                                   args.server,
+                                                   action,
+                                                   args.prefix,
+                                                   args.parallel,
+                                                   False))
+            else:
+                if "y" in raw_input(WARNINGS['stop_nvmesh_manager']).lower():
+                    self.poutput(manage_nvmesh_service('mgr',
+                                                       args.detail,
+                                                       args.server,
+                                                       action,
+                                                       args.prefix,
+                                                       args.parallel,
+                                                       False))
+                else:
+                    return
         elif args.nvmesh_object == 'mcm':
             manage_mcm(args.server,
                        action)
@@ -1537,10 +1628,10 @@ class NvmeshShell(Cmd):
     runcmd_parser.add_argument('-c', '--command', nargs='+', required=True,
                                help='The command you want to run on the servers. Use quotes if the command needs to run'
                                     ' with flags by itself, like: runcmd cluster -c "uname -a"')
-    runcmd_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True,
+    runcmd_parser.add_argument('-p', '--prefix', required=False, action='store_const', const=True, default=True,
                                help='Adds the host name at the beginning of each line. This helps to identify the '
                                     'content when piping into a grep or similar tasks.')
-    runcmd_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True,
+    runcmd_parser.add_argument('-P', '--parallel', required=False, action='store_const', const=True, default=True,
                                help='Runs the remote command on the remote hosts in parallel.')
     runcmd_parser.add_argument('-s', '--server', nargs='+', required=False,
                                help='Specify list of servers and or hosts.')
@@ -1711,7 +1802,7 @@ class NvmeshShell(Cmd):
         cli_exit.validate_exit()
 
     evict_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
-    evict_parser.add_argument('-d', '--drive', nargs=1, required=True,
+    evict_parser.add_argument('-d', '--drive', nargs='+', required=True,
                               help="The drive ID of the drive to evict.")
     evict_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
                               help="Automatically answer 'yes' and skip operational warnings.")
@@ -1722,10 +1813,10 @@ class NvmeshShell(Cmd):
         """Evict a drive in the NVMesh cluster."""
         try:
             if args.yes:
-                self.poutput(manage_drive('evict', args.drive[0], None))
+                self.poutput(manage_drive('evict', args.drive, None))
             else:
                 if 'y' in raw_input(WARNINGS['evict_drive']):
-                    self.poutput(manage_drive('evict', args.drive[0], None))
+                    self.poutput(manage_drive('evict', args.drive, None))
         except Exception, e:
             print(formatter.red("Error: " + e.message))
             logging.critical(e.message)
@@ -1755,6 +1846,9 @@ class NvmeshShell(Cmd):
             print(formatter.red("Error: " + e.message))
             logging.critical(e.message)
             cli_exit.error = True
+
+    def do_exit(self, _):
+        exit()
 
 
 def get_api_ready():
@@ -2520,13 +2614,13 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
         parallel_execution_map = []
         for host in set(host_list):
             if action == "check":
-                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s status" % scope])
+                parallel_execution_map.append([host, "/opt/NVMesh/%s*/services/nvmesh%s status" % (scope[0], scope)])
             elif action == "start":
-                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s start" % scope])
+                parallel_execution_map.append([host, "/opt/NVMesh/%s*/services/nvmesh%s start" % (scope[0], scope)])
             elif action == "stop":
-                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s stop" % scope])
+                parallel_execution_map.append([host, "/opt/NVMesh/%s*/services/nvmesh%s stop" % (scope[0], scope)])
             elif action == "restart":
-                parallel_execution_map.append([host, "/etc/init.d/nvmesh%s restart" % scope])
+                parallel_execution_map.append([host, "/opt/NVMesh/%s*/services/nvmesh%s restart" % (scope[0], scope)])
 
         command_return_list = process_pool.map(run_parallel_ssh_command, parallel_execution_map)
         process_pool.close()
@@ -2569,13 +2663,21 @@ def manage_nvmesh_service(scope, details, servers, action, prefix, parallel, gra
     else:
         for server in host_list:
             if action == "check":
-                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s status" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s status" % (
+                                                                      scope[0], scope))
             elif action == "start":
-                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s start" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s start" % (
+                                                                      scope[0], scope))
             elif action == "stop":
-                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s stop" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s stop" % (
+                                                                      scope[0], scope))
             elif action == "restart":
-                ssh_return = ssh.return_remote_command_std_output(server, "/etc/init.d/nvmesh%s restart" % scope)
+                ssh_return = ssh.return_remote_command_std_output(server,
+                                                                  "/opt/NVMesh/%s*/services/nvmesh%s restart" % (
+                                                                      scope[0], scope))
             if ssh_return:
                 if ssh_return[0] == 0:
                     if details is True:
@@ -2826,6 +2928,51 @@ def manage_volume(action, name, capacity, description, disk_classes, server_clas
             return "\n".join(output)
 
 
+def manage_vpg(action, name, capacity, description, disk_classes, server_classes, awareness, raid_level, stripe_width):
+    if get_api_ready() == 0:
+        api_payload = {}
+        payload = {}
+        if action == "save":
+            payload = {
+                "name": name,
+                "capacity": "MAX" if str(capacity[0]).upper() == "MAX" else int(humanfriendly.parse_size(capacity[0],
+                                                                                                         binary=True)),
+            }
+            if description is not None:
+                payload["description"] = description[0]
+            if disk_classes is not None:
+                payload["diskClasses"] = disk_classes
+            if server_classes is not None:
+                payload["serverClasses"] = server_classes
+            else:
+                payload["serverClasses"] = []
+            if awareness is not None:
+                payload["domain"] = awareness[0]
+            payload["RAIDLevel"] = RAID_LEVELS[raid_level[0]]
+            payload["stripeWidth"] = stripe_width
+            payload["stripeSize"] = 32
+            payload["numberOfMirrors"] = 1
+            api_return = json.loads(nvmesh.manage_vpg("save", api_payload))
+            if api_return['create'][0]['success'] is True:
+                return " ".join(["VPG",
+                                 name,
+                                 "successfully created.",
+                                 formatter.green('OK')])
+            else:
+                cli_exit.error = True
+                return " ".join(["Couldn't create vpg", name, formatter.red('Failed')])
+
+        elif action == 'remove':
+            api_return = []
+            payload["_id"] = name
+            api_return.append(json.loads(nvmesh.manage_volume("delete", api_payload)))
+            if api_return['remove'][0]['success'] is True:
+                return " ".join(["Volume", name, "successfully deleted.", formatter.green('OK')])
+            else:
+                cli_exit.error = True
+                return " ".join([formatter.red('Failed'), "to delete", name])
+
+
 def update_volume(volume, capacity, description, drives, targets, drive_classes, target_classes):
     if capacity:
         volume["capacity"] = "MAX" if str(capacity[0]).upper() == "MAX" else int(
@@ -2910,31 +3057,42 @@ def manage_drive(action, drive, format_type):
     get_api_ready()
     if action == 'evict':
         payload = {}
-        payload["diskID"] = str(drive)
-        api_payload = [payload]
+        payload["Ids"] = drive
+        api_payload = payload
         api_return = json.loads(nvmesh.evict_drive(api_payload))
         if api_return:
-            if api_return[0]['success']:
-                output = " ".join(["Drive", drive, "successfully evicted.", formatter.green("OK")])
-                return output
-            else:
-                cli_exit.error = True
-                output = " ".join(["Drive", drive, "not evicted!", formatter.red("Failed")])
-                return output
+            output_list = []
+            for line in api_return:
+                if line['success']:
+                    output = " ".join(["Drive", line['id'], "successfully evicted.", formatter.green("OK")])
+                    output_list.append(output)
+                else:
+                    cli_exit.error = True
+                    output = " ".join(["Drive", line['_id'], "not evicted!", line['err'],
+                                       formatter.red("Failed")])
+                    output_list.append(output)
+            return "\n".join(output_list)
         else:
             cli_exit.error = True
             output = " ".join(["Drive", drive, "not evicted!", formatter.red("Failed")])
             return output
     elif action == 'delete':
-        api_return = json.loads(nvmesh.delete_drive(drive))
+        payload = {}
+        payload["Ids"] = drive
+        api_payload = payload
+        api_return = json.loads(nvmesh.delete_drive(api_payload))
         if api_return:
-            if api_return[0]['success']:
-                output = " ".join(["Drive", drive, "successfully deleted.", formatter.green("OK")])
-                return output
-            else:
-                cli_exit.error = True
-                output = " ".join(["Drive", drive, "not deleted!", formatter.red("Failed")])
-                return output
+            output_list = []
+            for line in api_return:
+                if line['success']:
+                    output = " ".join(["Drive", line['id'], "successfully deleted.", formatter.green("OK")])
+                    output_list.append(output)
+                else:
+                    cli_exit.error = True
+                    output = " ".join(["Drive", line['id'], "not deleted!", line['err'],
+                                       formatter.red("Failed")])
+                    output_list.append(output)
+            return "\n".join(output_list)
         else:
             cli_exit.error = True
             output = " ".join(["Drive", drive, "not deleted!", formatter.red("Failed")])
@@ -3137,63 +3295,66 @@ def show_drives(details, targets, tsv):
             else:
                 target_details = json.loads(nvmesh.get_server_by_id(target))
                 for disk in target_details['disks']:
-                    vendor = disk['Vendor'] if not str(disk['Vendor']).lower() in NVME_VENDORS else \
-                        NVME_VENDORS[str(disk['Vendor']).lower()]
-                    if disk["status"].lower() == "ok":
-                        status = u'\u2705'
-                    elif disk["status"].lower() == "not_initialized":
-                        status = formatter.yellow("Not Initialized")
-                        drive_format = "n/a"
-                    elif disk["status"].lower() == "initializing":
-                        status = "Initializing - %s%%" % (disk['nZeroedBlks'] * 100 / disk['availableBlocks'])
+                    if disk['isExcluded']:
+                        pass
                     else:
-                        status = u'\u274C'
-                    if 'metadataCapabilities' in disk:
-                        if len(disk['metadataCapabilities']) > 0:
-                            ec_support = "Yes"
+                        vendor = disk['Vendor'] if not str(disk['Vendor']).lower() in NVME_VENDORS else \
+                            NVME_VENDORS[str(disk['Vendor']).lower()]
+                        if disk["status"].lower() == "ok":
+                            status = u'\u2705'
+                        elif disk["status"].lower() == "not_initialized":
+                            status = formatter.yellow("Not Initialized")
+                            drive_format = "n/a"
+                        elif disk["status"].lower() == "initializing":
+                            status = "Initializing - %s%%" % (disk['nZeroedBlks'] * 100 / disk['availableBlocks'])
                         else:
-                            ec_support = "No"
-                    else:
-                        ec_support = "n/a"
-                    if 'metadata_size' in disk:
-                        if disk["status"].lower() != "not_initialized":
-                            if disk['metadata_size'] > 0:
-                                drive_format = "EC"
+                            status = u'\u274C'
+                        if 'metadata_size' in disk:
+                            if int(disk['metadata_size']) == 8:
+                                ec_support = "Yes"
                             else:
-                                drive_format = "Legacy"
-                    else:
-                        drive_format = "n/a"
-                    if 'isOutOfService' in disk:
-                        in_service = formatter.red("No")
-                        status = "n/a"
-                    else:
-                        in_service = formatter.green("Yes")
-                    if details:
-                        drive_list.append([vendor,
-                                           disk['Model'],
-                                           disk['diskID'],
-                                           humanfriendly.format_size((disk['block_size'] * disk['blocks']),
-                                                                     binary=True),
-                                           status,
-                                           in_service,
-                                           ec_support,
-                                           drive_format,
-                                           humanfriendly.format_size(disk['block_size'], binary=True),
-                                           " ".join([str(100 - int((disk['Available_Spare'].split("_")[0]))), "%"]),
-                                           target,
-                                           disk['Numa_Node'],
-                                           disk['Submission_Queues']])
-                    else:
-                        drive_list.append([vendor,
-                                           re.sub("(?<=_)_|_(?=_)", "", disk['Model']),
-                                           disk['diskID'],
-                                           humanfriendly.format_size((disk['block_size'] * disk['blocks']),
-                                                                     binary=True),
-                                           status,
-                                           in_service,
-                                           ec_support,
-                                           drive_format,
-                                           target])
+                                ec_support = "No"
+                        else:
+                            ec_support = "n/a"
+                        if 'metadata_size' in disk:
+                            if disk["status"].lower() != "not_initialized":
+                                if disk['metadata_size'] > 0:
+                                    drive_format = "EC"
+                                else:
+                                    drive_format = "Legacy"
+                        else:
+                            drive_format = "n/a"
+                        if 'isOutOfService' in disk:
+                            in_service = formatter.red("No")
+                            status = "n/a"
+                        else:
+                            in_service = formatter.green("Yes")
+                        if details:
+                            drive_list.append([vendor,
+                                               disk['Model'],
+                                               disk['diskID'],
+                                               humanfriendly.format_size((disk['block_size'] * disk['blocks']),
+                                                                         binary=True),
+                                               status,
+                                               in_service,
+                                               ec_support,
+                                               drive_format,
+                                               humanfriendly.format_size(disk['block_size'], binary=True),
+                                               " ".join([str(100 - int((disk['Available_Spare'].split("_")[0]))), "%"]),
+                                               target,
+                                               disk['Numa_Node'],
+                                               disk['Submission_Queues']])
+                        else:
+                            drive_list.append([vendor,
+                                               re.sub("(?<=_)_|_(?=_)", "", disk['Model']),
+                                               disk['diskID'],
+                                               humanfriendly.format_size((disk['block_size'] * disk['blocks']),
+                                                                         binary=True),
+                                               status,
+                                               in_service,
+                                               ec_support,
+                                               drive_format,
+                                               target])
         if tsv:
             return formatter.print_tsv(drive_list)
         if details:
@@ -3252,6 +3413,23 @@ def start_shell():
     readline.read_history_file(history_file)
     atexit.register(readline.write_history_file, history_file)
     shell = NvmeshShell()
+    if os.path.exists(os.path.expanduser('~/.nvmesh_cli_ack')):
+        pass
+    else:
+        print("Before using this software, please read and acknowledge the licensing terms and agreement.")
+        if 'y' in raw_input("Do you want to proceed? [Yes/No]: ").lower():
+            NvmeshShell().ppaged(__license__)
+            if 'y' in raw_input("\nDo you agree to the licensing terms? [Yes/No]: ").lower():
+                ack = open(os.path.expanduser('~/.nvmesh_cli_ack'), 'w')
+                ack.write(str(""))
+                ack.close()
+            else:
+                print("Good bye.")
+                exit(0)
+        else:
+            print("Good bye.")
+            exit(0)
+
     if len(sys.argv) > 1:
         cli_exit.is_interactive = False
         shell.onecmd(' '.join(sys.argv[1:]))
@@ -3264,7 +3442,7 @@ This program comes with ABSOLUTELY NO WARRANTY; for licensing and warranty detai
 This is free software, and you are welcome to redistribute it under certain conditions; type ' show license' for 
 details.
 
-Starting the NVMesh shell version %s ...''' % __version__)
+Starting the NVMesh CLI version 1.3 - build %s ...''' % __version__)
 
 
 if __name__ == '__main__':
