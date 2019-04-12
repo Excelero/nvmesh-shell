@@ -41,7 +41,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '49'
+__version__ = '50'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -533,9 +533,9 @@ class SSHRemoteOperations:
             print formatter.print_red("Couldn't execute command %s on %s!" % (remote_command, host))
             return
 
-    def check_if_service_is_running(self, host,service):
+    def check_if_service_is_running(self, host, service):
         try:
-            cmd_output = self.execute_remote_command(host, "/opt/NVMesh/%s/services/%s status" %(service, service))
+            cmd_output = self.execute_remote_command(host, "/opt/NVMesh/%s/services/%s status" % (service, service))
             if cmd_output[0] == 0:
                 return True
             elif cmd_output[0] == 3:
@@ -569,12 +569,12 @@ class Api:
         try:
             if self.action == "post":
                 logging.debug(
-                           "API action: POST %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
+                    "API action: POST %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
                 logging.debug("API payload: %s" % self.payload if '/login' not in self.endpoint else 'login')
                 if self.payload:
                     self.response = self.session.post(
                         '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), json=self.payload,
-                        timeout=self.timeout)
+                        timeout=self.timeout, verify=False)
                 else:
                     self.response = self.session.post(
                         '%s://%s:%s%s' % (self.protocol, self.server, self.port, self.endpoint), timeout=self.timeout)
@@ -585,7 +585,8 @@ class Api:
             elif self.action == "get":
                 logging.debug("API action: GET %s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint))
                 self.response = self.session.get(
-                    "%s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint), timeout=self.timeout)
+                    "%s://%s:%s%s" % (self.protocol, self.server, self.port, self.endpoint), timeout=self.timeout,
+                    verify=False)
                 logging.debug("API response status code: %s" % self.response)
                 logging.debug("API response content is: %s" % self.response.content)
                 return self.response.content
@@ -894,18 +895,19 @@ class NvmeshShell(Cmd):
                             help='Optional - Volume description')
     add_parser.add_argument('-l', '--limit-by-disk', nargs='+', required=False,
                             help='Optional - Limit volume allocation to specific drives.')
-    add_parser.add_argument('-L', '--limit-by-target', nargs='+', required=False,
-                            help='Optional - Limit volume allocation to specific target nodes.')
-    group = add_parser.add_mutually_exclusive_group()
-    group.add_argument('-m', '--drive', nargs='+', required=False,
-                       help='Drive/media information. Needs to include the drive ID/serial and the target'
-                            'node/server name in the format driveId:targetName'
-                            'Example: -m "Example: 174019659DA4.1:test.lab"')
-    group.add_argument('-f', '--file', nargs=1, required=False,
-                       help='Path to the file containing the driveId:targetName information. '
-                            'Needs to'
-                            'Example: -f "/path/to/file". This argument is not allowed together with the -m '
-                            'argument')
+    limit_target_server_group = add_parser.add_mutually_exclusive_group()
+    limit_target_server_group.add_argument('-L', '--limit-by-target', nargs='+', required=False,
+                                           help='Optional - Limit volume allocation to specific target nodes.')
+    drive_file_group = add_parser.add_mutually_exclusive_group()
+    drive_file_group.add_argument('-m', '--drive', nargs='+', required=False,
+                                  help='Drive/media information. Needs to include the drive ID/serial and the target'
+                                       'node/server name in the format driveId:targetName'
+                                       'Example: -m "Example: 174019659DA4.1:test.lab"')
+    drive_file_group.add_argument('-f', '--file', nargs=1, required=False,
+                                  help='Path to the file containing the driveId:targetName information. '
+                                       'Needs to'
+                                       'Example: -f "/path/to/file". This argument is not allowed together with the -m '
+                                       'argument')
     add_parser.add_argument('-M', '--model', nargs=1, required=False,
                             help='Drive model information for the new drive class. '
                                  'Note: Must be the exactly the same model designator as when running the'
@@ -936,8 +938,8 @@ class NvmeshShell(Cmd):
                             help='Limit volume allocation to specific drive classes.')
     add_parser.add_argument('-w', '--stripe-width', nargs=1, required=False,
                             help='Number of disks to use. Required for R0 and R10.')
-    add_parser.add_argument('-s', '--server', nargs='+', required=False,
-                            help='Specify a single server or a space separated list of servers.')
+    limit_target_server_group.add_argument('-s', '--server', nargs='+', required=False,
+                                           help='Specify a single server or a space separated list of servers.')
     add_parser.add_argument('-S', '--size', nargs=1, required=False,
                             help='Specify the size of the new volume. The volumes size value is base*2/binary. '
                                  'Example: -S 12GB or 12GiB will create a volume with a size of 12884901888 bytes.'
@@ -1007,6 +1009,18 @@ class NvmeshShell(Cmd):
                                                  args.description,
                                                  parse_domain_args(args.classdomain)))
         elif args.nvmesh_object == 'volume':
+
+            if args.limit_by_target:
+                for server in args.limit_by_target:
+                    if not bool(re.match(
+                            "^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9])$",
+                            server)):
+                        print(formatter.yellow(
+                            "Provided hostname " + server + " is not a valid target/server name! "
+                                                            "If you try to provide a list of multiple servers, please "
+                                                            "use a space separated list of server names!"))
+                        return
+
             if args.name is None:
                 print(formatter.yellow(
                     "Volume name missing! Use the -n argument to provide a volume name"))
@@ -1033,7 +1047,7 @@ class NvmeshShell(Cmd):
             if args.vpg is None:
                 if '0' in args.raid_level[0] and args.stripe_width is None:
                     print(formatter.yellow(
-                            "Stripe width information missing! Use the -w argument to set the stripe width."))
+                        "Stripe width information missing! Use the -w argument to set the stripe width."))
                     return
             if args.count is not None:
                 if int(args.count[0]) > 100:
@@ -1100,14 +1114,14 @@ class NvmeshShell(Cmd):
                         "to set the node redundancy configuration."))
                     return
             self.poutput(manage_vpg('save',
-                                           args.name,
-                                           args.size,
-                                           args.description,
-                                           args.drive_class,
-                                           args.target_class,
-                                           args.domain,
-                                           args.raid_level,
-                                           args.stripe_width))
+                                    args.name,
+                                    args.size,
+                                    args.description,
+                                    args.drive_class,
+                                    args.target_class,
+                                    args.domain,
+                                    args.raid_level,
+                                    args.stripe_width))
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1620,7 +1634,7 @@ class NvmeshShell(Cmd):
             user.save_api_user()
         elif args.nvmesh_object == 'manager':
             ManagementServer().save_management_server(raw_input(
-                    "Provide a space separated list, min. one, of the NVMesh manager server name/s: ").split(" "))
+                "Provide a space separated list, min. one, of the NVMesh manager server name/s: ").split(" "))
         cli_exit.validate_exit()
 
     runcmd_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
@@ -1739,16 +1753,16 @@ class NvmeshShell(Cmd):
                                help='The new/updated name of the NVMesh object.')
     update_parser.add_argument('-s', '--server', nargs='+', required=False, help='Specify a single server or a space '
                                                                                  'separated list of servers.')
-    group = update_parser.add_mutually_exclusive_group()
-    group.add_argument('-m', '--drive', nargs='+', required=False,
-                       help='Drive/media information. Needs to include the drive ID/serial and the target'
-                            'node/server name in the format driveId:targetName'
-                            'Example: -m "Example: 174019659DA4.1:test.lab"')
-    group.add_argument('-f', '--file', nargs=1, required=False,
-                       help='Path to the file containing the driveId:targetName information. '
-                            'Needs to'
-                            'Example: -f "/path/to/file". This argument is not allowed together with the -m '
-                            'argument')
+    drive_file_group = update_parser.add_mutually_exclusive_group()
+    drive_file_group.add_argument('-m', '--drive', nargs='+', required=False,
+                                  help='Drive/media information. Needs to include the drive ID/serial and the target'
+                                       'node/server name in the format driveId:targetName'
+                                       'Example: -m "Example: 174019659DA4.1:test.lab"')
+    drive_file_group.add_argument('-f', '--file', nargs=1, required=False,
+                                  help='Path to the file containing the driveId:targetName information. '
+                                       'Needs to'
+                                       'Example: -f "/path/to/file". This argument is not allowed together with the -m '
+                                       'argument')
     update_parser.add_argument('-l', '--limit-by-disk', nargs='+', required=False,
                                help='Optional - Limit volume allocation to specific drives.')
     update_parser.add_argument('-L', '--limit-by-target', nargs='+', required=False,
@@ -1825,13 +1839,13 @@ class NvmeshShell(Cmd):
 
     format_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
     format_parser.add_argument('-d', '--drive', nargs='+', required=True,
-                              help="The drive ID or space separated list of drive IDs to be formatted.")
+                               help="The drive ID or space separated list of drive IDs to be formatted.")
     format_parser.add_argument('-f', '--format', nargs=1, required=True,
                                help="The format to be used. Valid options are: 'legacy' for NVMesh RAID-0, 1, 10, and "
                                     "Concatenated volumes, and 'ec' to support the new NVMesh distributed EC parity "
                                     "feature.")
     format_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
-                              help="Automatically answer 'yes' and skip operational warnings.")
+                               help="Automatically answer 'yes' and skip operational warnings.")
 
     @with_argparser(format_parser)
     @with_category("NVMesh Resource Management")
