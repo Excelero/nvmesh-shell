@@ -41,7 +41,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '50'
+__version__ = '51'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -2252,7 +2252,10 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                     if details is True and not layout:
                         volumes_list.append([name,
                                              health,
-                                             status,
+                                             status if remaining_dirty_bits == 0 else " ".join([
+                                                 status, str(
+                                                     100 - ((remaining_dirty_bits * 4096) * 100 / (int(volume['blocks'])
+                                                     * int(volume['blockSize'])))) + "%"]),
                                              volume['RAIDLevel'],
                                              parity_info,
                                              protection_level,
@@ -2270,7 +2273,11 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                     elif details is True and layout:
                         volumes_list.append([name,
                                              health,
-                                             status,
+                                             status if remaining_dirty_bits == 0 else " ".join([
+                                                 status, str(
+                                                     100 - ((remaining_dirty_bits * 4096) * 100 / (int(volume['blocks'])
+                                                                                                   * int(
+                                                                 volume['blockSize'])))) + "%"]),
                                              volume['RAIDLevel'],
                                              parity_info,
                                              protection_level,
@@ -2296,7 +2303,11 @@ def show_volumes(details, csv_format, json_format, volumes, short, layout):
                     else:
                         volumes_list.append([name,
                                              health,
-                                             status,
+                                             status if remaining_dirty_bits == 0 else " ".join([
+                                                 status, str(
+                                                     100 - ((remaining_dirty_bits * 4096) * 100 / (int(volume['blocks'])
+                                                                                                   * int(
+                                                                 volume['blockSize'])))) + "%"]),
                                              volume['RAIDLevel'],
                                              parity_info,
                                              protection_level,
