@@ -41,7 +41,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '51'
+__version__ = '52'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -756,6 +756,12 @@ class Api:
         self.action = 'post'
         return self.execute_api_call()
 
+    def delete_nic(self, payload):
+        self.payload = payload
+        self.endpoint = '/servers/deleteNIC'
+        self.action = 'post'
+        return self.execute_api_call()
+
     def format_drive(self, payload):
         self.payload = payload
         self.endpoint = '/disks/formatDiskByDiskIds'
@@ -1125,8 +1131,8 @@ class NvmeshShell(Cmd):
         cli_exit.validate_exit()
 
     delete_parser = argparse.ArgumentParser(formatter_class=ArgsUsageOutputFormatter)
-    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'drive', 'driveclass', 'targetclass', 'vpg'],
-                               help='Delete hosts, servers, drives, drive classes, and target classes.')
+    delete_parser.add_argument('nvmesh_object', choices=['host', 'volume', 'drive', 'driveclass', 'targetclass', 'vpg', 'nic'],
+                               help='Delete hosts, servers, drives, drive classes, nic and target classes.')
     delete_parser.add_argument('-s', '--server', nargs='+',
                                help='Specify a single server or a list of servers.')
     delete_parser.add_argument('-t', '--target-class', nargs='+',
@@ -1139,6 +1145,8 @@ class NvmeshShell(Cmd):
                                help='Specify a single volume or a space separated list of volumes.')
     delete_parser.add_argument('-f', '--force', required=False, action='store_const', const=True, default=False,
                                help='Use this flag to forcefully delete the volume/s.')
+    delete_parser.add_argument('-N', '--nic', required=False, nargs=1,
+                               help='Specify the NIC to be deleted.')
     delete_parser.add_argument('-y', '--yes', required=False, action='store_const', const=True,
                                help="Automatically answer 'yes' and skip operational warnings.")
 
@@ -1243,6 +1251,14 @@ class NvmeshShell(Cmd):
             else:
                 cli_exit.error = True
                 print(formatter.yellow("Use the -D/--drive argument to specify the drive to be deleted."))
+
+        elif args.nvmesh_object == 'nic':
+            if args.nic:
+                self.poutput(manage_nic('delete', args.nic[0]))
+            else:
+                cli_exit.error = True
+                print(formatter.yellow("Use the -N/--nic argument to specify the NIC to be deleted."))
+
         elif args.nvmesh_object == 'vpg':
             if args.name is None:
                 print(formatter.yellow(
@@ -3144,6 +3160,29 @@ def manage_drive(action, drive, format_type):
             cli_exit.error = True
             output = " ".join(["Drive/s", " ".join(drive), "not formatted!", formatter.red("Failed")])
             return output
+
+
+def manage_nic(action, nic_id):
+    if get_api_ready() == 0:
+        api_return = []
+        output = []
+        payload = {}
+        if action == "delete":
+            payload["nicID"] = nic_id.strip()
+
+            api_return = json.loads(nvmesh.delete_nic(payload))
+            if api_return:
+                if api_return['success']:
+                    output = " ".join(["NIC", api_return['_id'], "successfully deleted.", formatter.green("OK")])
+                else:
+                    cli_exit.error = True
+                    output = " ".join(["NIC", api_return['_id'], "not deleted!", api_return['error'],
+                                       formatter.red("Failed")])
+                return output
+            else:
+                cli_exit.error = True
+                output = " ".join(["NIC", " ".join(nic_id.strip()), "not formatted!", formatter.red("Failed")])
+                return output
 
 
 def manage_drive_class(action, class_list, drives, model, name, description, domains, file_path):
