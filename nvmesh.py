@@ -41,7 +41,7 @@ import dateutil.parser
 import re
 import requests
 
-__version__ = '52'
+__version__ = '53'
 
 RAID_LEVELS = {
     'lvm': 'LVM/JBOD',
@@ -1977,13 +1977,34 @@ def show_target(details, csv_format, json_format, server, short):
                         health = formatter.red(formatter.bold("Critical ")) + u'\u274C'
                     for disk in target['disks']:
                         target_disk_list.append(disk['diskID'])
-                    for nic in target['nics']:
-                        target_nic_list.append(nic['nicID'])
                     if details is True:
+                        server_details = json.loads(nvmesh.get_server_by_id(target['node_id']))
+                        for nic in server_details['nics']:
+                            if nic['status'].lower() == "ok":
+                                nic_status = formatter.green("OK")
+                            elif nic['status'].lower() == "missing":
+                                nic_status = formatter.red("Missing!")
+                            else:
+                                nic_status = formatter.red("Error!")
+                            if 'mtu' in nic:
+                                mtu = nic['mtu']
+                            else:
+                                mtu = "n/a"
+                            if 'deviceType' in nic:
+                                device = nic['deviceType']
+                            else:
+                                device = "n/a"
+
+                            target_nic_list.append([nic['nicID'], nic_status, nic['protocol'], mtu, device])
+
                         target_list.append([target_name,
                                             health, target['version'],
                                             ' '.join(target_disk_list),
-                                            ' '.join(target_nic_list)])
+                                            format_smart_table(target_nic_list, ["NIC ID",
+                                                                                 "Status",
+                                                                                 "Protocol",
+                                                                                 "MTU",
+                                                                                 "Device"])])
                     else:
                         target_list.append([target_name, health, target['version']])
             if details is True:
