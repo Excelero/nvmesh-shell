@@ -830,11 +830,11 @@ class NvmeshShell(Cmd):
         of servers/targets. E.g. 'list targets -s target1 target2'"""
         user.get_api_user()
         if args.nvmesh_object == 'target':
-            self.poutput(show_targets(args.detail,
-                                      args.tsv,
-                                      args.json,
-                                      args.server,
-                                      args.short_name))
+            self.poutput(show_target(args.detail,
+                                     args.tsv,
+                                     args.json,
+                                     args.server,
+                                     args.short_name))
         elif args.nvmesh_object == 'client':
             self.poutput(show_clients(args.tsv,
                                       args.json,
@@ -1956,7 +1956,7 @@ def show_cluster(csv_format, json_format):
         print(formatter.red("Error: " + e.message))
 
 
-def show_targets(details, csv_format, json_format, server, short):
+def show_target(details, csv_format, json_format, server, short):
     try:
         if get_api_ready() == 0:
             target_json = json.loads(nvmesh.get_servers())
