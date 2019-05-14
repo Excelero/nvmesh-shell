@@ -52,7 +52,7 @@ setup(
                       'humanfriendly',
                       'gnureadline',
                       'requests',
-                      'urllib3',
+                      'urllib3==1.21.1',
                       'ipython',
                       'python-dateutil'],
 
