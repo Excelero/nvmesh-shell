@@ -1,3 +1,5 @@
+DEPRICATED, PLEASE CONTACT EXCELERO FOR THE LATEST VERSION.
+
 **Installation**
 
 To install nvmesh-shell perform the following steps:
